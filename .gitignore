@@ -1,0 +1,21 @@
+# Folders to ignore
+extras/
+sql/
+tests/
+web/cache/
+
+# Style guide
+STYLE_GUIDE.md
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE files
+.vscode/
+.idea/
+
+# OS files
+.DS_Store
+Thumbs.db
