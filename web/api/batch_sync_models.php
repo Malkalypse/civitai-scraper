@@ -101,7 +101,7 @@ if ($action === 'sync_single') {
     $dbHost = 'localhost';
     $dbUser = 'root';
     $dbPass = '';
-    $dbName = 'civitai_loras';
+    $dbName = 'civitai_models';
     
     $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
     
@@ -255,7 +255,7 @@ if ($action === 'sync') {
     $dbHost = 'localhost';
     $dbUser = 'root';
     $dbPass = '';
-    $dbName = 'civitai_loras';
+    $dbName = 'civitai_models';
     
     $conn = new mysqli($dbHost, $dbUser, $dbPass, $dbName);
     

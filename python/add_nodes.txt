@@ -1,0 +1,4 @@
+Type: "EmptySD3LatentImage"
+Inputs: []
+Widgets ["width", "height", "batch-size"]
+Outputs: ["LATENT"]

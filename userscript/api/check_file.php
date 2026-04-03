@@ -29,6 +29,9 @@ if (!$fileName) {
     exit;
 }
 
+// Path to checkpoints folder
+$checkpointsPath = 'D:/AI/models/checkpoints';
+
 // Path to loras folder
 $lorasPath = 'D:/AI/models/loras';
 
@@ -36,26 +39,32 @@ $lorasPath = 'D:/AI/models/loras';
 $found = false;
 $filePath = null;
 
-if (is_dir($lorasPath)) {
-    $folders = array_filter(glob($lorasPath . '/*'), 'is_dir');
-    
+$pathsToSearch = [$checkpointsPath, $lorasPath];
+
+foreach ($pathsToSearch as $basePath) {
+    if (!is_dir($basePath)) {
+        continue;
+    }
+
+    $folders = array_filter(glob($basePath . '/*'), 'is_dir');
+
     foreach ($folders as $folder) {
         $searchPath = $folder . '/' . $fileName;
-        
+
         // Check for .safetensors file (with or without extension in fileName)
         if (file_exists($searchPath)) {
             $found = true;
             $filePath = $searchPath;
-            break;
+            break 2;
         }
-        
+
         // Try adding .safetensors if not present
         if (!str_ends_with($fileName, '.safetensors')) {
             $searchPathWithExt = $searchPath . '.safetensors';
             if (file_exists($searchPathWithExt)) {
                 $found = true;
                 $filePath = $searchPathWithExt;
-                break;
+                break 2;
             }
         }
     }

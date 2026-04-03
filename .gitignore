@@ -1,4 +1,5 @@
 # Folders to ignore
+dev/
 extras/
 sql/
 tests/

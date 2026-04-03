@@ -21,6 +21,150 @@ if (!$modelId || !$versionId) {
 $carouselImages = [];
 $galleryImages = [];
 
+/**
+ * Build a Civitai transform that constrains the largest side to maxSide.
+ * Civitai reliably applies width transforms in this endpoint shape.
+ */
+function buildCivitaiThumbnailTransform($image, $maxSide = 450) {
+  $width = isset($image['width']) && is_numeric($image['width']) ? (int)$image['width'] : null;
+  $height = isset($image['height']) && is_numeric($image['height']) ? (int)$image['height'] : null;
+
+  if ($width !== null && $height !== null && $width > 0 && $height > 0) {
+    if ($height > $width) {
+      $scaledWidth = (int)floor(((int)$maxSide * $width) / $height);
+      $scaledWidth = max(1, $scaledWidth);
+      return 'anim=false,width=' . $scaledWidth . ',optimized=true';
+    }
+
+    return 'anim=false,width=' . (int)$maxSide . ',optimized=true';
+  }
+
+  return 'anim=false,width=' . (int)$maxSide . ',optimized=true';
+}
+
+function toCivitaiThumbnailUrl($url, $transform) {
+  if (!is_string($url) || stripos($url, 'image.civitai.com') === false) {
+    return $url;
+  }
+
+  $normalized = preg_replace(
+    '~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
+    '/' . $transform,
+    $url,
+    1,
+    $replacedCount
+  );
+
+  if ($replacedCount > 0 && is_string($normalized)) {
+    return $normalized;
+  }
+
+  if (preg_match('~^https?://image\.civitai\.com/[^/]+/([^/]+)(?:/(.*))?$~i', $url, $matches)) {
+    $token = $matches[1];
+    $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
+    $newUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/' . $transform;
+    if ($tail !== '' && stripos($tail, 'original=true') !== 0) {
+      $newUrl .= '/' . $tail;
+    }
+    return $newUrl;
+  }
+
+  return $url;
+}
+
+function toCivitaiOriginalUrl($url) {
+  if (!is_string($url) || stripos($url, 'image.civitai.com') === false) {
+    return $url;
+  }
+
+  $normalized = preg_replace(
+    '~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
+    '/original=true',
+    $url,
+    1,
+    $replacedCount
+  );
+
+  if ($replacedCount > 0 && is_string($normalized)) {
+    return $normalized;
+  }
+
+  if (preg_match('~^https?://image\.civitai\.com/[^/]+/([^/]+)(?:/(.*))?$~i', $url, $matches)) {
+    $token = $matches[1];
+    $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
+
+    if ($tail !== '') {
+      $tail = preg_replace('~^(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)/?~i', '', $tail);
+      $tail = ltrim((string)$tail, '/');
+    }
+
+    $newUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/original=true';
+    if ($tail !== '') {
+      $newUrl .= '/' . $tail;
+    }
+
+    return $newUrl;
+  }
+
+  return $url;
+}
+
+/**
+ * Resolve a Civitai image page URL from an image payload when possible.
+ * Supports multiple common id field names and URL pattern fallback.
+ */
+function resolveCivitaiImagePageUrl($image) {
+  if (!is_array($image)) {
+    return null;
+  }
+
+  $relativePathKeys = ['href', 'link', 'linkUrl', 'imageUrl', 'path', 'permalink'];
+  foreach ($relativePathKeys as $key) {
+    if (isset($image[$key]) && is_string($image[$key])) {
+      $value = trim($image[$key]);
+      if (preg_match('~^/images/(\d+)(?:[/?#].*)?$~i', $value, $matches)) {
+        return 'https://civitai.com/images/' . (int)$matches[1];
+      }
+      if (preg_match('~^https?://(?:www\.)?civitai\.com/images/(\d+)(?:[/?#].*)?$~i', $value, $matches)) {
+        return 'https://civitai.com/images/' . (int)$matches[1];
+      }
+    }
+  }
+
+  $candidateKeys = ['id', 'imageId', 'image_id'];
+  foreach ($candidateKeys as $key) {
+    if (isset($image[$key]) && is_numeric($image[$key])) {
+      return 'https://civitai.com/images/' . (int)$image[$key];
+    }
+  }
+
+  if (isset($image['url']) && is_string($image['url'])) {
+    if (preg_match('~civitai\.com/images/(\d+)~i', $image['url'], $matches)) {
+      return 'https://civitai.com/images/' . (int)$matches[1];
+    }
+
+    if (preg_match('~image\.civitai\.com/.*/(\d+)\.(?:jpe?g|png|webp|gif|avif|mp4|webm)(?:[?#].*)?$~i', $image['url'], $matches)) {
+      return 'https://civitai.com/images/' . (int)$matches[1];
+    }
+  }
+
+  foreach ($image as $value) {
+    if (!is_string($value)) {
+      continue;
+    }
+
+    if (preg_match('~(?:^|https?://(?:www\.)?civitai\.com)?/images/(\d+)(?:[/?#].*)?$~i', trim($value), $matches)) {
+      return 'https://civitai.com/images/' . (int)$matches[1];
+    }
+
+    if (preg_match('~image\.civitai\.com/.*/(\d+)\.(?:jpe?g|png|webp|gif|avif|mp4|webm)(?:[?#].*)?$~i', trim($value), $matches)) {
+      return 'https://civitai.com/images/' . (int)$matches[1];
+    }
+  }
+
+  return null;
+}
+
 try {
   // Fetch carousel images from Civitai API
   $apiUrl = "https://civitai.com/api/v1/models/{$modelId}";
@@ -53,7 +197,18 @@ try {
       if ($targetVersion && isset($targetVersion['images'])) {
         foreach ($targetVersion['images'] as $image) {
           if (isset($image['url'])) {
-            $imageData = ['url' => $image['url']];
+            $thumbTransform = buildCivitaiThumbnailTransform($image, 450);
+            $originalImageUrl = toCivitaiOriginalUrl($image['url']);
+            $imageUrl = toCivitaiThumbnailUrl($image['url'], $thumbTransform);
+            $imageData = [
+              'url' => $imageUrl,
+              'originalUrl' => $originalImageUrl
+            ];
+
+            $resolvedLinkUrl = resolveCivitaiImagePageUrl($image);
+            if ($resolvedLinkUrl !== null) {
+              $imageData['linkUrl'] = $resolvedLinkUrl;
+            }
             
             // Check if this is a video
             if (isset($image['type']) && $image['type'] === 'video') {
@@ -125,15 +280,33 @@ try {
         if (isset($item['images']) && is_array($item['images'])) {
           foreach ($item['images'] as $img) {
             if (isset($img['url'])) {
-              $url = $img['url'];
+              $thumbTransform = buildCivitaiThumbnailTransform($img, 450);
+              $rawUrl = $img['url'];
+              $url = $rawUrl;
               
               // Build proper Civitai image URL
               if (strpos($url, 'http') !== 0) {
-                // URL is just the UUID, construct full URL with CDN path
-                $url = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $url . '/original=true';
+                // URL is just the UUID, construct full URL with optimized thumbnail params
+                $url = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $url . '/' . $thumbTransform;
               }
-              
-              $imageData = ['url' => $url];
+
+              $url = toCivitaiThumbnailUrl($url, $thumbTransform);
+
+              $originalUrl = $rawUrl;
+              if (strpos($originalUrl, 'http') !== 0) {
+                $originalUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $originalUrl . '/original=true';
+              }
+              $originalUrl = toCivitaiOriginalUrl($originalUrl);
+
+              $imageData = [
+                'url' => $url,
+                'originalUrl' => $originalUrl
+              ];
+
+              $resolvedLinkUrl = resolveCivitaiImagePageUrl($img);
+              if ($resolvedLinkUrl !== null) {
+                $imageData['linkUrl'] = $resolvedLinkUrl;
+              }
               
               if (isset($img['type']) && $img['type'] === 'video') {
                 $imageData['type'] = 'video';

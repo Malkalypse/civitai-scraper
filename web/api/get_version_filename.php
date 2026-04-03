@@ -1,46 +1,21 @@
 <?php
 header('Content-Type: application/json');
 
-// Database connection
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "civitai_models";
-
-$conn = new mysqli($servername, $username, $password, $dbname);
-
-if ($conn->connect_error) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed: ' . $conn->connect_error]);
-    exit;
-}
-
-// Get JSON data from request body
-$json = file_get_contents('php://input');
-$data = json_decode($json, true);
-
-if (!isset($data['modelVersions'])) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Missing required parameter: modelVersions']);
-    exit;
-}
-
-$modelVersions = $data['modelVersions'];
-$filename = isset($data['filename']) ? trim($data['filename']) : null;
-$filenameEscaped = ($filename !== null && $filename !== '') ? $conn->real_escape_string($filename) : null;
-$modelType = isset($data['modelType']) ? trim($data['modelType']) : 'LoRA';
-if ($modelType === '') {
-    $modelType = 'LoRA';
-}
-$modelType = $conn->real_escape_string($modelType);
-$stats = ['inserted' => 0, 'updated' => 0, 'errors' => []];
-
 function getCivitaiAuthHeaders() {
     $token = getenv('CIVITAI_API_TOKEN');
     if (!$token || trim($token) === '') {
         return [];
     }
     return ['Authorization: Bearer ' . trim($token)];
+}
+
+$input = json_decode(file_get_contents('php://input'), true);
+$versionId = isset($input['versionId']) ? (int)$input['versionId'] : 0;
+
+if ($versionId <= 0) {
+    http_response_code(400);
+    echo json_encode(['error' => 'Missing or invalid versionId']);
+    exit;
 }
 
 function pickDownloadFilenameFromFiles($files) {
@@ -258,125 +233,77 @@ function resolveDownloadFilenameFromUrl($downloadUrl) {
     return $urlCache[$downloadUrl];
 }
 
-function fetchVersionFilenameFromApi($versionId) {
-    if (!$versionId) {
-        return null;
-    }
+$url = "https://civitai.com/api/v1/model-versions/{$versionId}";
+$ch = curl_init();
+curl_setopt_array($ch, [
+    CURLOPT_URL => $url,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_MAXREDIRS => 5,
+    CURLOPT_TIMEOUT => 30,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    CURLOPT_HTTPHEADER => getCivitaiAuthHeaders()
+]);
 
-    static $cache = [];
-    if (isset($cache[$versionId])) {
-        return $cache[$versionId];
-    }
+$response = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$error = curl_error($ch);
+curl_close($ch);
 
-    $url = "https://civitai.com/api/v1/model-versions/{$versionId}";
-    $ch = curl_init();
-    curl_setopt_array($ch, [
-        CURLOPT_URL => $url,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_FOLLOWLOCATION => true,
-        CURLOPT_MAXREDIRS => 5,
-        CURLOPT_TIMEOUT => 30,
-        CURLOPT_SSL_VERIFYPEER => false,
-        CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        CURLOPT_HTTPHEADER => getCivitaiAuthHeaders()
-    ]);
-
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-
-    if ($error || $httpCode !== 200 || !$response) {
-        $cache[$versionId] = null;
-        return null;
-    }
-
-    $decoded = json_decode($response, true);
-    if (!is_array($decoded)) {
-        $cache[$versionId] = null;
-        return null;
-    }
-
-    $selectedFile = pickDownloadFileFromFiles($decoded['files'] ?? []);
-    $downloadUrl = $selectedFile['downloadUrl'] ?? ($decoded['downloadUrl'] ?? null);
-
-    if ($downloadUrl && !empty($selectedFile['metadata']) && is_array($selectedFile['metadata'])) {
-        $queryParts = [];
-
-        if (!empty($selectedFile['type'])) {
-            $queryParts['type'] = $selectedFile['type'];
-        }
-
-        foreach (['format', 'size', 'fp'] as $metaKey) {
-            if (!empty($selectedFile['metadata'][$metaKey])) {
-                $queryParts[$metaKey] = $selectedFile['metadata'][$metaKey];
-            }
-        }
-
-        if (!empty($queryParts)) {
-            $separator = (strpos($downloadUrl, '?') !== false) ? '&' : '?';
-            $downloadUrl .= $separator . http_build_query($queryParts);
-        }
-    }
-
-    $resolvedFilename = resolveDownloadFilenameFromUrl($downloadUrl);
-    if (!$resolvedFilename) {
-        $resolvedFilename = pickDownloadFilenameFromFiles($decoded['files'] ?? []);
-    }
-
-    $cache[$versionId] = $resolvedFilename ? trim($resolvedFilename) : null;
-    return $cache[$versionId];
+if ($error) {
+    http_response_code(502);
+    echo json_encode(['error' => "cURL error: {$error}"]);
+    exit;
 }
 
-// Process each model version
-foreach ($modelVersions as $version) {
-    $modelId = isset($version['modelId']) ? intval($version['modelId']) : null;
-    $versionId = isset($version['id']) ? intval($version['id']) : null;
-    $baseModel = isset($version['baseModel']) ? $conn->real_escape_string($version['baseModel']) : null;
-    
-    // Get canonical download filename from Civitai API, then fallback to provided version files
-    $originalFilenameRaw = fetchVersionFilenameFromApi($versionId);
-    if (!$originalFilenameRaw) {
-        $originalFilenameRaw = pickDownloadFilenameFromFiles($version['files'] ?? []);
+if ($httpCode !== 200 || !$response) {
+    http_response_code(502);
+    echo json_encode(['error' => "Failed to fetch model version {$versionId} (HTTP {$httpCode})"]);
+    exit;
+}
+
+$decoded = json_decode($response, true);
+if (!is_array($decoded)) {
+    http_response_code(502);
+    echo json_encode(['error' => 'Invalid JSON response from Civitai API']);
+    exit;
+}
+
+$selectedFile = pickDownloadFileFromFiles($decoded['files'] ?? []);
+$downloadUrl = $selectedFile['downloadUrl'] ?? ($decoded['downloadUrl'] ?? null);
+
+if ($downloadUrl && !empty($selectedFile['metadata']) && is_array($selectedFile['metadata'])) {
+    $queryParts = [];
+
+    if (!empty($selectedFile['type'])) {
+        $queryParts['type'] = $selectedFile['type'];
     }
-    $originalFilename = $originalFilenameRaw ? $conn->real_escape_string($originalFilenameRaw) : null;
-    
-    if ($modelId === null || $versionId === null) {
-        $stats['errors'][] = "Missing model_id or version_id for a version";
-        continue;
-    }
-    
-    // Insert or update the model
-    $sql = "INSERT INTO models (model_id, version_id, type, base_model, original_filename, filename) 
-            VALUES ($modelId, $versionId, " . 
-            "'$modelType', " . 
-            ($baseModel ? "'$baseModel'" : "NULL") . ", " . 
-            ($originalFilename ? "'$originalFilename'" : "NULL") . ", " . 
-            ($filenameEscaped ? "'$filenameEscaped'" : "NULL") . ") 
-            ON DUPLICATE KEY UPDATE 
-                type = VALUES(type),
-                base_model = VALUES(base_model), 
-                original_filename = VALUES(original_filename),
-                filename = VALUES(filename)";
-    
-    if ($conn->query($sql) === TRUE) {
-        if ($conn->affected_rows > 0) {
-            if ($conn->insert_id > 0) {
-                $stats['inserted']++;
-            } else {
-                $stats['updated']++;
-            }
+
+    foreach (['format', 'size', 'fp'] as $metaKey) {
+        if (!empty($selectedFile['metadata'][$metaKey])) {
+            $queryParts[$metaKey] = $selectedFile['metadata'][$metaKey];
         }
-    } else {
-        $stats['errors'][] = "SQL Error for model $modelId version $versionId: " . $conn->error;
+    }
+
+    if (!empty($queryParts)) {
+        $separator = (strpos($downloadUrl, '?') !== false) ? '&' : '?';
+        $downloadUrl .= $separator . http_build_query($queryParts);
     }
 }
 
-$conn->close();
+$filename = resolveDownloadFilenameFromUrl($downloadUrl);
+if (!$filename) {
+    $filename = pickDownloadFilenameFromFiles($decoded['files'] ?? []);
+}
+
+if ($filename) {
+    $filename = trim($filename);
+}
 
 echo json_encode([
     'success' => true,
-    'stats' => $stats,
-    'message' => "Synced {$stats['inserted']} new records, updated {$stats['updated']} existing records"
+    'versionId' => $versionId,
+    'filename' => $filename,
+    'downloadUrl' => $downloadUrl
 ]);
-?>

@@ -1,8 +1,6 @@
 <?php
-/**
- * Get Model Tags - Find models that match ALL specified tags
- * 
- * Returns models where ALL provided tags are present
+/** Get Model Tags - Find models that match ALL specified tags
+ * - Returns models where ALL provided tags are present
  */
 
 header('Content-Type: application/json');
@@ -11,7 +9,7 @@ header('Content-Type: application/json');
 $servername = "localhost";
 $username = "root";
 $password = "";
-$dbname = "civitai_loras";
+$dbname = "civitai_models";
 
 $conn = new mysqli($servername, $username, $password, $dbname);
 

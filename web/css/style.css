@@ -6,7 +6,8 @@
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-  background-color: rgb(26, 27, 30);
+  /*font-family: ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji, Segoe UI Symbol, Noto Color Emoji;*/
+  background-color: #1a1b1e;
   color: rgb(193, 194, 197);
   font-size: 14px;
   /*line-height: 1.5;*/
@@ -54,6 +55,13 @@ a:hover {
   user-select: none;
 }
 
+.folder-triangle {
+  display: inline-block;
+  transition: transform 0.2s ease;
+  font-size: 10px;
+  margin-right: 5px;
+}
+
 .folder-name:hover {
   background-color: #3a3a3a;
 }
@@ -79,14 +87,16 @@ a:hover {
   color: #fff;
 }
 
-.file-item.highlighted {
-  background-color: #4CAF50;
-  color: white;
-  font-weight: bold;
+.file-item.missing-file {
+  color: #868e96;
 }
 
-.file-item.dimmed {
-  opacity: 0.3;
+.file-item.missing-file:hover {
+  color: #adb5bd;
+}
+
+.file-item.hidden {
+  display: none;
 }
 
 .main-content {
@@ -195,7 +205,7 @@ button:disabled {
 }
 
 .info {
-  /*background-color: #1a2a3a;*/
+  background-color: #25262b;
   border: 1px solid #373a40;
   border-radius: 4px;
   padding: 6px;
@@ -223,6 +233,36 @@ button:disabled {
 
 .info strong {
   color: rgb(193, 194, 197);
+}
+
+.editable-filename {
+  font-size: 24px;
+  font-weight: bold;
+  color: #e0e0e0;
+  padding: 8px 12px;
+  background-color: #2c2e33; /*#2a2a2a;*/
+  border: 2px solid #373a40;
+  border-radius: 4px;
+  cursor: text;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.editable-filename:hover {
+  border-color: #666;
+}
+
+.editable-filename:focus {
+  border-color: #4fc3f7;
+  background-color: #333;
+}
+
+.reset-filename-btn:hover {
+  background: #e67e22;
+}
+
+.reset-filename-btn:active {
+  background: #d35400;
 }
 
 /*
@@ -286,6 +326,33 @@ button:disabled {
   font-size: 12px;
 }
 
+.settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 10px;
+}
+
+.settings-table:first-child {
+  margin-top: 10px;
+}
+
+.settings-table td {
+  padding: 4px 6px;
+  vertical-align: top;
+  border: 1px solid #373a40;
+}
+
+.settings-table td:first-child {
+  width: 120px;
+  font-size: 13px;
+  color: rgb(193, 194, 197);
+  background-color: #25262b
+}
+
+.settings-table td:last-child {
+  color: rgb(193, 194, 197);
+}
+
 .version-links {
   margin: 8px 0;
   /*padding: 2px;
@@ -316,47 +383,65 @@ button:disabled {
 }
 
 .version-link {
-  padding: 8px 12px;
-  background-color: #1a1a1a;
-  border: 1px solid #555;
+  padding: 3px 12px;
+  background-color: #343a40;
+  /*border: 1px solid #555;*/
   border-radius: 3px;
-  color: rgb(77, 171, 247);
+  color: #fefefe;
   text-decoration: none;
-  font-size: 13px;
+  font-size: 12px;
   transition: all 0.2s;
-  margin: 2px;
+  margin: 1px;
   cursor: pointer;
   display: inline-block;
+  font-weight: 600;
 }
 
 .version-link:hover {
-  background-color: #333;
+  background-color: #212529;
+  /*border-color: rgb(77, 171, 247);*/
+  color: #fff;
+}
+
+.version-link.active {
+  background-color: #1971c2;
   border-color: rgb(77, 171, 247);
+  color: #fff;
+  font-weight: bold;
+}
+
+.version-link.active:hover {
+  background-color: #1864ab;
+  /*border-color: rgb(77, 171, 247);*/
   color: #fff;
 }
 
 .model-tag {
-  padding: 6px 10px;
-  background-color: #2a2a2a;
-  border: 1px solid #444;
+  padding: 2px 8px;
+  background-color: #343a40; /*#2a2a2a;*/
+  /*border: 1px solid #373a40; /*#444;*/
   border-radius: 3px;
-  color: #aaa;
-  font-size: 12px;
+  color: #fefefe;
+  font-size: 10px;
   display: inline-block;
-  margin: 2px;
+  margin: 1px;
   cursor: pointer;
-  transition: all 0.2s;
+  /*transition: all 0.2s;*/
   user-select: none;
+  text-transform: uppercase;
+  font-weight: 600;
 }
 
+/*
 .model-tag:hover {
-  background-color: #3a3a3a;
+  background-color: #212529;
   border-color: #666;
 }
+*/
 
 .model-tag.active {
-  background-color: #4CAF50;
-  border-color: #4CAF50;
+  background-color: #1b2c3c;
+  /*border-color: #4CAF50;*/
   color: white;
   font-weight: bold;
 }
@@ -385,4 +470,122 @@ button:disabled {
 
 .media-container img.hidden {
   opacity: 0;
+}
+
+/* Workflow Analysis Node Cards */
+.node {
+  border: 1px solid #666;
+  border-radius: 8px;
+  padding: 10px;
+  background: #353535;
+}
+
+.node-title {
+  font-weight: 700;
+  /*margin-bottom: 8px;*/
+  color: #999;
+}
+
+.node-table-title {
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-weight: 600;
+  font-size: 11px;
+  color: #999;
+}
+
+.node-links {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background-color: #2a2a2a;
+}
+
+.node-widgets {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #222; 
+}
+
+/* Workflow Connection Links */
+.workflow-connection-list--offset {
+  margin-top: 4px;
+}
+
+.workflow-connection-line {
+  margin-top: 2px;
+}
+
+.workflow-connection-btn, .workflow-connection-btn:hover {
+  border: none;
+  background: none;
+  color: #999;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  text-align: left;
+  /*text-decoration: underline;*/
+}
+
+.workflow-connection-btn:hover {
+  text-decoration: underline;
+}
+
+/* Node Links Table Cells */
+.node-links .port {
+  border: 1px solid #666;
+  padding: 4px 6px;
+  width: 1%;
+  white-space: nowrap;
+  color: #999;
+}
+
+.node-links .label {
+  border: 1px solid #666;
+  padding: 4px 6px;
+  width: 1%;
+  white-space: nowrap;
+  color: #999;
+
+}
+
+.node-links .value {
+  border: 1px solid #666;
+  padding: 4px 6px;
+  width: 40%;
+  white-space: pre-line;
+  color: #999;
+}
+
+/* Node Widgets Table Cells */
+.node-widgets .port {
+  border: 1px solid #666;
+  padding: 4px 6px;
+  width: 1%;
+  white-space: nowrap;
+  color: #999;
+}
+
+.node-widgets .label {
+  border: 1px solid #666;
+  padding: 4px 6px;
+  width: 1%;
+  white-space: nowrap;
+  color: #999;
+  font-weight: bold;
+}
+
+.node-widgets .value {
+  border: 1px solid #666;
+  padding: 4px 6px;
+  width: 40%;
+  white-space: pre-line;
+  color: #ddd;
+  font-weight: bold;
+}
+
+.workflow-cell-content {
+  font-weight: normal;
 }

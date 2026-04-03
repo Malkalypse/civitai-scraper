@@ -23,7 +23,7 @@ if (!$modelId || !is_numeric($modelId)) {
 }
 
 // Database connection
-$db = new mysqli('localhost', 'root', '', 'civitai_loras');
+$db = new mysqli('localhost', 'root', '', 'civitai_models');
 
 if ($db->connect_error) {
   echo json_encode(['error' => 'Database connection failed: ' . $db->connect_error]);

@@ -170,7 +170,7 @@ echo json_encode(['error' => 'Invalid action']);
 
 // Helper function to sync tags for a model
 function syncTagsForModel($modelId, $tagsOnModels) {
-  $db = new mysqli('localhost', 'root', '', 'civitai_loras');
+  $db = new mysqli('localhost', 'root', '', 'civitai_models');
   
   if ($db->connect_error) {
     return ['success' => false, 'error' => 'Database connection failed'];

@@ -11,6 +11,9 @@
 
 	<!-- Sidebar -->
 	<div class="sidebar">
+		<h2>Checkpoints Library</h2>
+		<div id="checkpointsList">Loading...</div>
+
 		<h2>Loras Library</h2>
 		<div id="lorasList">Loading...</div>
 	</div>
