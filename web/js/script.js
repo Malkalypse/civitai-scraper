@@ -9,6 +9,7 @@ import { loadCheckpoints, loadLoras, setmodelClickHandler } from './sidebar.js';
 import { fetchData } from './model-actions.js';
 import { loadModelFromFile } from './model-loading.js';
 import { addModelToDatabase } from './db-sync.js';
+import { installApiDebugFetchWrapper } from './fetch-debug.js';
 
 
 /** Main application script: initializes the app, sets up event handlers, and loads initial data
@@ -20,6 +21,8 @@ import { addModelToDatabase } from './db-sync.js';
  * - Loading initial data for sidebar libraries (checkpoints and Loras)
  */
 async function initializeApp() {
+	installApiDebugFetchWrapper();
+
 	setmodelClickHandler( loadModelFromFile );
 
 	if( modelIdInput ) {

@@ -6,8 +6,10 @@
  */
 
 header( 'Content-Type: application/json' );
+require_once __DIR__ . '/../debug.php';
 
 function collectExistingFileNames($basePath) {
+	debug_api_to_console('collectExistingFileNames reached: basePath=' . $basePath);
 	$names = [];
 
 	if (!is_dir($basePath)) {
@@ -54,6 +56,7 @@ $dbname = 'civitai_models';
 $conn = new mysqli($host, $user, $pass, $dbname);
 
 if ($conn->connect_error) {
+	flush_api_debug_header();
 	echo json_encode(['error' => 'Database connection failed: ' . $conn->connect_error]);
 	exit;
 }
@@ -81,6 +84,7 @@ try {
 		];
 
 		if (!isset($typeAliases[$normalizedType])) {
+			flush_api_debug_header();
 			echo json_encode(['error' => 'Invalid model type']);
 			$conn->close();
 			exit;
@@ -171,6 +175,7 @@ try {
 		return strcmp($a['folder'], $b['folder']);
 	});
 
+	flush_api_debug_header();
 	echo json_encode([
 		'success' => true,
 		'data' => $structure
@@ -185,5 +190,6 @@ try {
 	if (isset($conn)) {
 		$conn->close();
 	}
+	flush_api_debug_header();
 	echo json_encode(['error' => 'Exception: ' . $e->getMessage()]);
 }
