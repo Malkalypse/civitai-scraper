@@ -1,63 +1,84 @@
 import { AppState } from './app-context.js';
 import { loadLoras, loadCheckpoints } from './sidebar.js';
 
-export function handleFilenameKeydown( event, element ) {
+/** Handle keydown events for editable filename element 
+ * @param {KeyboardEvent}	event
+ * @param {HTMLElement}		element Contenteditable element for filename
+ */
+export async function handleFilenameKeydown( event, element ) {
 	if( event.key === 'Enter' ) {
 		event.preventDefault();
+		await saveFilename( element );
 		element.blur();
 	}
 }
 
-export function handleOriginalFilenameKeydown( event, element ) {
-	if( event.key === 'Enter' ) {
-		event.preventDefault();
-		element.blur();
-	}
-}
-
+/** Save new filename with API request
+ * @param {HTMLElement} element Contenteditable element for the filename
+ * @param {Object}			options Additional options for saving
+ */
 export async function saveFilename( element, options = {} ) {
-	const allowMissingFile = options.allowMissingFile === true;
-	let newFilename = element.textContent.trim();
-	let originalFilename = element.getAttribute( 'data-original' );
-	const originalDownloadFilename = element.getAttribute( 'data-original-file' ) || '';
+	const	allowMissingFile	= options.allowMissingFile === true;
+	let		newFilename				= element.textContent.trim();
+	let		currentFilename		= element.getAttribute( 'data-original' );
+	const originalFilename	= element.getAttribute( 'data-original-filename' ) || '';
 
+	// Remove .safetensors extension for comparison
 	if( newFilename.endsWith( '.safetensors' ) ) {
 		newFilename = newFilename.substring( 0, newFilename.length - 12 );
 	}
-	if( originalFilename.endsWith( '.safetensors' ) ) {
-		originalFilename = originalFilename.substring( 0, originalFilename.length - 12 );
+	if( currentFilename.endsWith( '.safetensors' ) ) {
+		currentFilename = currentFilename.substring( 0, currentFilename.length - 12 );
 	}
 
-	if( newFilename === originalFilename ) {
+	// If filename hasn't changed, do nothing
+	if( newFilename === currentFilename ) {
 		return;
 	}
 
+	// Validate new filename
 	if( !newFilename ) {
 		alert( 'Invalid filename. Cannot be empty.' );
-		element.textContent = originalFilename;
+		element.textContent = currentFilename;
 		return;
 	}
 
 	try {
+		// Send API request to rename file
+
+		// Build data object for renaming
 		const renameData = {
-			oldFilename: originalFilename,
-			newFilename: newFilename,
-			originalDownloadFilename,
-			modelId: AppState.model.currentModelIdForDb || null,
-			versionId: AppState.model.currentVersionId || null,
-			baseModel: AppState.model.currentBaseModel || null,
+			oldFilename:	currentFilename,
+			newFilename:	newFilename,
+			originalFilename,
+			modelId:			AppState.model.currentModelIdForDb || null,
+			versionId:		AppState.model.currentVersionId || null,
+			baseModel:		AppState.model.currentBaseModel || null,
 			allowMissingFile
 		};
 
 		console.log( 'Renaming file with data:', renameData );
 
-		const response = await fetch( 'api/rename_model.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( renameData )
+		// Send API request to rename file
+		const response = await fetch( 'api/models/rename_model.php', {
+			method:		'POST',
+			headers:	{ 'Content-Type': 'application/json' },
+			body:			JSON.stringify( renameData )
 		} );
 
-		const result = await response.json();
+		const responseText = await response.text();
+		let result;
+		
+		try {
+			result = JSON.parse( responseText );
+		} catch( parseError ) {
+			throw new Error( `Invalid JSON response: ${responseText.substring( 0, 300 )}` );
+		}
+
+		if ( result.debug ) {
+			console.log( '[rename_model debug]', result.debug );
+		}		
+
 		console.log( 'Rename result:', result );
 
 		if( result.success ) {
@@ -74,20 +95,36 @@ export async function saveFilename( element, options = {} ) {
 			] );
 
 			console.log( 'Filename updated successfully' );
+
 		} else {
 			alert( 'Error renaming file: ' + ( result.error || 'Unknown error' ) );
-			element.textContent = originalFilename;
+			element.textContent = currentFilename;
 		}
 	} catch( error ) {
 		console.error( 'Error renaming file:', error );
 		alert( 'Error renaming file: ' + error.message );
-		element.textContent = originalFilename;
+		element.textContent = currentFilename;
 	}
 }
 
+/** Handle keydown events for original filename element
+ * @param {KeyboardEvent}	event
+ * @param {HTMLElement}		element Contenteditable element for original filename
+ */
+export async function handleOriginalFilenameKeydown( event, element ) {
+	if( event.key === 'Enter' ) {
+		event.preventDefault();
+		await saveOriginalFilename( element );
+		element.blur();
+	}
+}
+
+/** Save new original filename with API request
+ * @param {HTMLElement} element Contenteditable element for the original filename
+ */
 export async function saveOriginalFilename( element ) {
-	const originalValue = element.getAttribute( 'data-original' ) || '';
-	const newValue = element.textContent.trim();
+	const originalValue	= element.getAttribute( 'data-original' ) || '';
+	const newValue			= element.textContent.trim();
 
 	if( newValue === originalValue ) {
 		return;
@@ -100,24 +137,27 @@ export async function saveOriginalFilename( element ) {
 	}
 
 	try {
+		// Send API request to update original filename
 		const response = await fetch( 'api/update_original_filename.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( {
-				modelId: AppState.model.currentModelIdForDb,
-				versionId: AppState.model.currentVersionId,
-				originalFilename: newValue
+			method:		'POST',
+			headers:	{ 'Content-Type': 'application/json' },
+			body:			JSON.stringify( {
+				modelId:					AppState.model.currentModelIdForDb,
+				versionId:				AppState.model.currentVersionId,
+				originalFilename:	newValue
 			} )
 		} );
 
 		const result = await response.json();
+
+		// If update was not successful, throw error to be caught below
 		if( !response.ok || !result.success ) {
 			throw new Error( result.error || `HTTP ${response.status}` );
 		}
 
-		const savedValue = result.originalFilename || '';
-		AppState.model.currentOriginalFilename = savedValue;
-		element.textContent = savedValue;
+		const savedValue												= result.originalFilename || '';
+		AppState.model.currentOriginalFilename	= savedValue;
+		element.textContent											= savedValue;
 		element.setAttribute( 'data-original', savedValue );
 
 		console.log( 'Original filename updated:', {
@@ -139,28 +179,28 @@ export async function resetFilename() {
 		return;
 	}
 
-	const originalFile = filenameElement.getAttribute( 'data-original-file' );
-	if( !originalFile ) {
+	const originalFilename = filenameElement.getAttribute( 'data-original-filename' );
+	if( !originalFilename ) {
 		alert( 'Original filename not available' );
 		return;
 	}
 
-	let originalFilename = originalFile;
-	if( originalFilename.endsWith( '.safetensors' ) ) {
-		originalFilename = originalFilename.substring( 0, originalFilename.length - 12 );
+	let resetFilenameValue = originalFilename;
+	if( resetFilenameValue.endsWith( '.safetensors' ) ) {
+		resetFilenameValue = resetFilenameValue.substring( 0, resetFilenameValue.length - 12 );
 	}
 
 	const currentName = filenameElement.textContent.trim();
 
-	if( currentName === originalFilename ) {
+	if( currentName === resetFilenameValue ) {
 		alert( 'Filename is already set to the original' );
 		return;
 	}
 
-	if( !confirm( `Reset filename from "${currentName}" to "${originalFilename}"?` ) ) {
+	if( !confirm( `Reset filename from "${currentName}" to "${resetFilenameValue}"?` ) ) {
 		return;
 	}
 
-	filenameElement.textContent = originalFilename;
+	filenameElement.textContent = resetFilenameValue;
 	await saveFilename( filenameElement, { allowMissingFile: true } );
 }

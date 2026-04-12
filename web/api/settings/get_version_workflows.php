@@ -3,20 +3,19 @@
  * Get workflow id/revision pairs for a model version.
  */
 
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = api_read_json_input();
 $versionId = isset($input['versionId']) ? (int)$input['versionId'] : 0;
 
 if ($versionId <= 0) {
-  echo json_encode(['success' => false, 'error' => 'Missing or invalid versionId']);
-  exit;
+  api_send_failure('Missing or invalid versionId');
 }
 
-$conn = new mysqli('localhost', 'root', '', 'civitai_models');
+$conn = api_db_connect();
 if ($conn->connect_error) {
-  echo json_encode(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
-  exit;
+  api_send_failure('Database connection failed: ' . $conn->connect_error, 500);
 }
 
 $conn->set_charset('utf8mb4');
@@ -24,17 +23,15 @@ $conn->set_charset('utf8mb4');
 $sql = 'SELECT DISTINCT workflow_id, workflow_revision FROM version_workflows WHERE version_id = ? ORDER BY workflow_revision ASC, workflow_id ASC';
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
-  echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
+  api_send_failure('Prepare failed: ' . $conn->error, 500);
   $conn->close();
-  exit;
 }
 
 $stmt->bind_param('i', $versionId);
 if (!$stmt->execute()) {
-  echo json_encode(['success' => false, 'error' => 'Execute failed: ' . $stmt->error]);
+  api_send_failure('Execute failed: ' . $stmt->error, 500);
   $stmt->close();
   $conn->close();
-  exit;
 }
 
 $result = $stmt->get_result();

@@ -1,3 +1,9 @@
+/**
+ * Dormant legacy module for settings UI rendering and interaction logic
+ * Not currently used
+ * Mmy be reactivated in the future if needed
+ */
+
 import { AppState, output } from './app-context.js';
 import { renderSettingsTablesHtml } from './renderers/settings-ui-html.js';
 
@@ -328,7 +334,7 @@ export async function saveSettingsToolsSelection( cell, type, setId, selectedIds
 	}
 
 	try {
-		const response = await fetch( 'api/update_version_tools.php', {
+		const response = await fetch( 'api/settings/update_version_tools.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( {
@@ -392,7 +398,7 @@ export async function saveSettingsHeaderName( element, setId ) {
 	}
 
 	try {
-		const response = await fetch( 'api/update_settings.php', {
+		const response = await fetch( 'api/settings/update_settings.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( {
@@ -448,7 +454,7 @@ export async function addSettingsSet() {
 	}
 
 	try {
-		const response = await fetch( 'api/create_settings_set.php', {
+		const response = await fetch( 'api/settings/create_settings_set.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( {
@@ -587,7 +593,7 @@ export async function saveSettingsField( element, field, setId = null ) {
 	}
 
 	try {
-		const response = await fetch( 'api/update_settings.php', {
+		const response = await fetch( 'api/settings/update_settings.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( payload )

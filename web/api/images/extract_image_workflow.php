@@ -26,7 +26,6 @@ function fetchUrl(string $url, int $timeout = 20): array {
   $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
   $contentType = (string)curl_getinfo($ch, CURLINFO_CONTENT_TYPE);
   $error = curl_error($ch);
-  curl_close($ch);
 
   return [
     'ok' => is_string($body) && $body !== '' && $httpCode >= 200 && $httpCode < 300,
@@ -283,6 +282,169 @@ function selectWorkflowFromEntries(array $entries): array {
   return ['key' => '', 'workflowText' => ''];
 }
 
+function decodeExifUserComment(string $raw): string {
+  if ($raw === '') {
+    return '';
+  }
+
+  if (strpos($raw, "ASCII\0\0\0") === 0) {
+    return trim(substr($raw, 8), "\0 \t\r\n");
+  }
+
+  if (strpos($raw, "UNICODE\0") === 0) {
+    $text = substr($raw, 8);
+    if ($text === '') {
+      return '';
+    }
+
+    if (substr($text, 0, 2) === "\xFF\xFE" && function_exists('iconv')) {
+      $decoded = @iconv('UTF-16LE', 'UTF-8//IGNORE', substr($text, 2));
+      return is_string($decoded) ? trim($decoded) : '';
+    }
+
+    if (substr($text, 0, 2) === "\xFE\xFF" && function_exists('iconv')) {
+      $decoded = @iconv('UTF-16BE', 'UTF-8//IGNORE', substr($text, 2));
+      return is_string($decoded) ? trim($decoded) : '';
+    }
+
+    if (function_exists('iconv')) {
+      $decodedLe = @iconv('UTF-16LE', 'UTF-8//IGNORE', $text);
+      if (is_string($decodedLe) && trim($decodedLe) !== '') {
+        return trim($decodedLe);
+      }
+      $decodedBe = @iconv('UTF-16BE', 'UTF-8//IGNORE', $text);
+      if (is_string($decodedBe) && trim($decodedBe) !== '') {
+        return trim($decodedBe);
+      }
+    }
+
+    return trim($text, "\0 \t\r\n");
+  }
+
+  return trim($raw, "\0 \t\r\n");
+}
+
+function extractJpegSegments(string $binary): array {
+  $comments = [];
+  $app1 = [];
+
+  if (strlen($binary) < 4 || substr($binary, 0, 2) !== "\xFF\xD8") {
+    return ['comments' => $comments, 'app1' => $app1];
+  }
+
+  $len = strlen($binary);
+  $offset = 2;
+
+  while ($offset + 4 <= $len) {
+    if (ord($binary[$offset]) !== 0xFF) {
+      break;
+    }
+
+    while ($offset < $len && ord($binary[$offset]) === 0xFF) {
+      $offset++;
+    }
+
+    if ($offset >= $len) {
+      break;
+    }
+
+    $marker = ord($binary[$offset]);
+    $offset++;
+
+    // Start Of Scan: compressed image data starts; stop scanning metadata segments.
+    if ($marker === 0xDA || $marker === 0xD9) {
+      break;
+    }
+
+    if ($offset + 2 > $len) {
+      break;
+    }
+
+    $segmentLength = unpack('n', substr($binary, $offset, 2))[1];
+    if ($segmentLength < 2 || $offset + $segmentLength > $len) {
+      break;
+    }
+
+    $payload = substr($binary, $offset + 2, $segmentLength - 2);
+
+    if ($marker === 0xFE) {
+      $comments[] = $payload;
+    } elseif ($marker === 0xE1) {
+      $app1[] = $payload;
+    }
+
+    $offset += $segmentLength;
+  }
+
+  return ['comments' => $comments, 'app1' => $app1];
+}
+
+function parseJpegMetadataEntries(string $binary): array {
+  $entries = [];
+
+  $segments = extractJpegSegments($binary);
+  foreach ($segments['comments'] as $comment) {
+    $text = trim((string)$comment, "\0 \t\r\n");
+    if ($text !== '') {
+      $entries[] = ['chunk' => 'JPEG_COM', 'keyword' => 'comment', 'text' => $text];
+    }
+  }
+
+  foreach ($segments['app1'] as $app1Payload) {
+    if (strpos($app1Payload, "http://ns.adobe.com/xap/1.0/\0") === 0) {
+      $xmpText = substr($app1Payload, strlen("http://ns.adobe.com/xap/1.0/\0"));
+      $xmpText = trim((string)$xmpText, "\0 \t\r\n");
+      if ($xmpText !== '') {
+        $entries[] = ['chunk' => 'JPEG_APP1', 'keyword' => 'xmp', 'text' => $xmpText];
+      }
+    }
+  }
+
+  if (function_exists('exif_read_data')) {
+    $tempFile = @tempnam(sys_get_temp_dir(), 'wf_');
+    if (is_string($tempFile) && $tempFile !== '') {
+      $writeOk = @file_put_contents($tempFile, $binary);
+      if ($writeOk !== false) {
+        $exif = @exif_read_data($tempFile, null, true, false);
+
+        if (is_array($exif)) {
+          $rawUserComment = '';
+
+          if (isset($exif['EXIF']['UserComment'])) {
+            $rawValue = $exif['EXIF']['UserComment'];
+            if (is_array($rawValue)) {
+              $rawUserComment = (string)reset($rawValue);
+            } else {
+              $rawUserComment = (string)$rawValue;
+            }
+          } elseif (isset($exif['COMMENT'])) {
+            $commentValue = $exif['COMMENT'];
+            if (is_array($commentValue)) {
+              foreach ($commentValue as $value) {
+                $text = trim((string)$value);
+                if ($text !== '') {
+                  $entries[] = ['chunk' => 'JPEG_EXIF', 'keyword' => 'comment', 'text' => $text];
+                }
+              }
+            } elseif (is_string($commentValue) && trim($commentValue) !== '') {
+              $entries[] = ['chunk' => 'JPEG_EXIF', 'keyword' => 'comment', 'text' => trim($commentValue)];
+            }
+          }
+
+          $decodedUserComment = decodeExifUserComment($rawUserComment);
+          if ($decodedUserComment !== '') {
+            $entries[] = ['chunk' => 'JPEG_EXIF', 'keyword' => 'workflow', 'text' => $decodedUserComment];
+          }
+        }
+      }
+
+      @unlink($tempFile);
+    }
+  }
+
+  return $entries;
+}
+
 try {
   $resolvedImageId = $imageId > 0 ? $imageId : extractImageIdFromPageUrl($imagePageUrl);
 
@@ -312,16 +474,9 @@ try {
   $binary = $imageResponse['body'];
   $isPng = strlen($binary) >= 8 && substr($binary, 0, 8) === "\x89PNG\r\n\x1a\n";
 
-  if (!$isPng) {
-    echo json_encode([
-      'success' => false,
-      'error' => 'Unsupported image format',
-      'errorCode' => 'UNSUPPORTED_FORMAT'
-    ]);
-    exit;
-  }
-
-  $entries = parsePngTextChunks($binary);
+  // Only PNG is treated as a workflow-carrying format.
+  // Non-PNG images continue through the standard no-workflow response path.
+  $entries = $isPng ? parsePngTextChunks($binary) : [];
   $selected = selectWorkflowFromEntries($entries);
 
   if ($selected['workflowText'] === '') {
@@ -329,7 +484,8 @@ try {
       'success' => false,
       'error' => 'No data',
       'errorCode' => 'WORKFLOW_NOT_FOUND',
-      'chunkCount' => count($entries)
+      'chunkCount' => count($entries),
+      'imageId' => $resolvedImageId
     ]);
     exit;
   }

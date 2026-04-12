@@ -7,7 +7,7 @@ export async function markImageWorkflowAsNull( imageId, imageFilename = '' ) {
 		return false;
 	}
 
-	const response = await fetch( 'api/update_image_workflow.php', {
+	const response = await fetch( 'api/images/update_image_workflow.php', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify( {
@@ -49,7 +49,7 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 		? ''
 		: String( workflowRevision ).trim();
 
-	const response = await fetch( 'api/update_image_workflow.php', {
+	const response = await fetch( 'api/images/update_image_workflow.php', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify( {
@@ -230,7 +230,7 @@ export async function copyTextWithFallback( text ) {
 
 
 export async function fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl ) {
-	const response = await fetch( 'api/extract_image_workflow.php', {
+	const response = await fetch( 'api/images/extract_image_workflow.php', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify( {
@@ -270,7 +270,7 @@ export async function fetchNodePortDefinitions( nodes ) {
 		return {};
 	}
 
-	const response = await fetch( 'api/get_comfyui_node_ports.php', {
+	const response = await fetch( 'api/workflows/get_comfyui_node_ports.php', {
 		method: 'POST',
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify( { nodeTypes } )

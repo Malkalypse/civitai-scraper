@@ -183,7 +183,7 @@ function extractWorkflowRevision(array $payload): string {
 }
 
 try {
-  $cacheDir = __DIR__ . '/../cache/image_generation';
+  $cacheDir = __DIR__ . '/../../cache/image_generation';
   if (!is_dir($cacheDir)) {
     @mkdir($cacheDir, 0755, true);
   }
@@ -281,7 +281,6 @@ try {
 
   $response = curl_exec($ch);
   $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
 
   if (!$response || $httpCode !== 200) {
     echo json_encode([

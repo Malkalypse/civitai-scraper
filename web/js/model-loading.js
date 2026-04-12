@@ -1,16 +1,19 @@
-import { AppState, modelIdInput } from './app-context.js';
+import { AppState, modelInput } from './app-context.js';
 import { fetchData } from './model-actions.js';
 
+/** Load a model version based on a string input (e.g. "847101?modelVersionId=1605769")
+ * @param {string} modelVersionString String containing query
+ */
 export function loadModelVersion( modelVersionString ) {
-	AppState.model.currentFilename = null;
-	modelIdInput.value = modelVersionString;
+	AppState.model.currentFilename	= null;
+	modelInput.value								= modelVersionString;
 	fetchData();
 }
 
 /** Load specific model version when a version link is clicked
  * @param {*} element
  */
-export function loadModelFromFile( element ) {
+export function loadModelFromSidebar( element ) {
 
 	// Get model ID, version ID, and base model from clicked element
 	const modelId   = element.getAttribute( 'data-model' );
@@ -32,9 +35,9 @@ export function loadModelFromFile( element ) {
 	// Load model version based on clicked element data attributes
 	if( modelId ) {
 		if( versionId ) {
-			modelIdInput.value = modelId + '?modelVersionId=' + versionId;
+			modelInput.value = modelId + '?modelVersionId=' + versionId;
 		} else {
-			modelIdInput.value = modelId;
+			modelInput.value = modelId;
 		}
 		fetchData( { preserveFilename: true } );
 	} else {

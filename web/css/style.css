@@ -129,7 +129,7 @@ h1 {
   white-space: nowrap;
 }
 
-#modelId {
+#modelInput {
   flex: 1;
   background-color: #2a2a2a;
   border: 1px solid #444;
@@ -139,7 +139,7 @@ h1 {
   padding: 6px 10px;
 }
 
-#modelId:focus {
+#modelInput:focus {
   outline: none;
   border-color: #4CAF50;
 }
@@ -263,6 +263,10 @@ button:disabled {
 
 .reset-filename-btn:active {
   background: #d35400;
+}
+
+.image-container {
+  flex: 0 0 auto;
 }
 
 /*

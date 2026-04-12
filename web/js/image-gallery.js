@@ -111,7 +111,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 			return;
 		}
 
-		const response = await fetch( 'api/get_model_images.php', {
+		const response = await fetch( 'api/models/get_model_images.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { modelId, versionId } )
@@ -176,7 +176,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 				const imageInfo = await Promise.all( cacheChecks );
 				const slotElements = imageInfo.map( () => {
 					const slot = document.createElement( 'div' );
-					slot.style.flex = '0 0 auto';
+					slot.className = 'image-container';
 					container.appendChild( slot );
 					return slot;
 				} );
@@ -285,7 +285,8 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 		}
 
 		if( result.galleryImages && result.galleryImages.length > 0 ) {
-			setStatus( 'galleryStatus', `(<span id="galleryCount">0</span>/${result.galleryImages.length})`, true );
+			const totalGalleryLabel = `${result.galleryImages.length}${result.galleryHasMorePages ? '+' : ''}`;
+			setStatus( 'galleryStatus', `(<span id="galleryCount">0</span>/${totalGalleryLabel})`, true );
 			const loadGalleryImages = async () => {
 				if( isStale() ) {
 					return;
@@ -330,7 +331,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 				const imageInfo = await Promise.all( cacheChecks );
 				const slotElements = imageInfo.map( () => {
 					const slot = document.createElement( 'div' );
-					slot.style.flex = '0 0 auto';
+					slot.className = 'image-container';
 					container.appendChild( slot );
 					return slot;
 				} );
@@ -430,7 +431,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 				}
 
 				container.dataset.loading = 'false';
-				setStatus( 'galleryStatus', `(${renderedCount})`, true );
+				setStatus( 'galleryStatus', `(${renderedCount}/${totalGalleryLabel})`, true );
 			};
 
 			loadGalleryImages();

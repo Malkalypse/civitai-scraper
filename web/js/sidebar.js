@@ -1,78 +1,80 @@
 /*
-  Sidebar management: loading folder/file libraries, building lists, handling clicks
+  Sidebar management:
+    loading folder/file libraries,
+    building lists,
+    handling clicks
 */
 
 
-// Imports
-import { AppState } from './app-context.js'; // current model/version info
 import { escapeHtml } from './dom-utils.js'; // safely escape folder and file names when building HTML
+import { AppState } from './app-context.js'; // current model/version info
 
 
-// Global variables
+// Global variable
 let modelClickHandler = null;
 
 
-/** Set the click handler for files in the sidebar
- * @param {function} handler
+/** Set click handler for files in sidebar
+ * @param {function} handler Function to call when a file item is clicked
  */
-export function setmodelClickHandler( handler ) {
-	modelClickHandler = typeof handler === 'function' ? handler : null;
+export function setModelClickHandler( handler ) {
+  modelClickHandler = typeof handler === 'function' ? handler : null;
 }
 
-
-// Specific functions to load checkpoints and loras into the sidebar
+// Load checkpoints and loras into sidebar
 export async function loadCheckpoints( preserveState = false ) {
-	await loadSidebarLibrary( {
-		url: 'api/get_models.php?type=checkpoint',
-		containerId: 'checkpointsList',
-		preserveState,
-		errorLabel: 'checkpoints'
-	} );
+  await loadSidebarLibrary( {
+    url:          'api/models/get_models.php?type=checkpoint',
+    containerId:  'checkpointsList',
+    preserveState,
+    errorLabel:   'checkpoints'
+  } );
 }
 export async function loadLoras( preserveState = false ) {
-	await loadSidebarLibrary( {
-		url: 'api/get_models.php?type=lora',
-		containerId: 'lorasList',
-		preserveState,
-		errorLabel: 'loras'
-	} );
+  await loadSidebarLibrary( {
+    url:          'api/models/get_models.php?type=lora',
+    containerId:  'lorasList',
+    preserveState,
+    errorLabel:   'loras'
+  } );
 }
 
 /** Load file libraries into the sidebar, preserving open folders
- * @param {object} options
- * @param {string} options.url API endpoint to fetch the folder/file data from
- * @param {string} options.containerId ID of the container element to render the list into
- * @param {boolean} [options.preserveState=false] whether to preserve open/closed state of folders when reloading
- * @param {string} [options.errorLabel='items'] label to use in error messages (e.g. "checkpoints" or "loras")
+ * @param {string}  options.url                   API endpoint to fetch folder/file data from
+ * @param {string}  options.containerId           ID of container element to render list into
+ * @param {boolean} [options.preserveState=false] Whether to preserve open/closed state of folders when reloading
+ * @param {string}  [options.errorLabel='items']  label to use in error messages (e.g. "checkpoints" or "loras")
  */
 export async function loadSidebarLibrary( {
   url,
   containerId,
   preserveState = false,
-  errorLabel = 'items'
+  errorLabel    = 'items'
 } ) {
-	const container = document.getElementById( containerId );
 
-	if( !container ) return;
+  // Get container element
+  const container = document.getElementById( containerId );
 
-	try {
-		const openFolders = preserveState ? getOpenFolders( containerId ) : new Set();
-		const response = await fetch( url );
-		const result = await response.json();
+  if( !container ) return;
 
-		if( result.error ) {
-			container.innerHTML = `<div class="error" style="font-size: 12px;">${escapeHtml( result.error )}</div>`;
-			return;
-		}
+  try {
+    const openFolders = preserveState ? getOpenFolders( containerId ) : new Set();
+    const response    = await fetch( url );
+    const result      = await response.json();
 
-		if( result.data ) {
-			const html = buildFoldersHTML( result.data, openFolders );
-			container.innerHTML = html;
-			attachSidebarEventHandlers( container );
-		}
-	} catch( error ) {
-		container.innerHTML = `<div class="error" style="font-size: 12px;">Error loading ${errorLabel}</div>`;
-	}
+    if( result.error ) {
+      container.innerHTML = `<div class="error" style="font-size: 12px;">${escapeHtml( result.error )}</div>`;
+      return;
+    }
+
+    if( result.data ) {
+      const html          = buildFoldersHTML( result.data, openFolders );
+      container.innerHTML = html;
+      attachSidebarEventHandlers( container );
+    }
+  } catch( error ) {
+    container.innerHTML = `<div class="error" style="font-size: 12px;">Error loading ${errorLabel}</div>`;
+  }
 }
 
 /** Track the open folders for a given container
@@ -80,26 +82,26 @@ export async function loadSidebarLibrary( {
  * @returns Set of names of open folders
  */
 export function getOpenFolders( containerId ) {
-	const openFolders = new Set();
-	const container = document.getElementById( containerId );
+  const openFolders = new Set();
+  const container   = document.getElementById( containerId );
 
-	if( !container ) {
-		return openFolders;
-	}
+  if( !container ) {
+    return openFolders;
+  }
 
-	container.querySelectorAll( '.folder-item' ).forEach( ( folderItem ) => {
-		const fileList = folderItem.querySelector( '.file-list' );
+  container.querySelectorAll( '.folder-item' ).forEach( ( folderItem ) => {
+    const fileList = folderItem.querySelector( '.file-list' );
 
-		if( fileList && fileList.style.display === 'block' ) {
-			const folderName = folderItem.querySelector( '.folder-name' );
+    if( fileList && fileList.style.display === 'block' ) {
+      const folderName = folderItem.querySelector( '.folder-name' );
 
-			if( folderName ) {
-				openFolders.add( folderName.textContent.trim().substring( 2 ) );
-			}
-		}
-	} );
+      if( folderName ) {
+        openFolders.add( folderName.textContent.trim().substring( 2 ) );
+      }
+    }
+  } );
 
-	return openFolders;
+  return openFolders;
 }
 
 /** Build the HTML for the sidebar folders and files
@@ -108,133 +110,140 @@ export function getOpenFolders( containerId ) {
  * @returns HTML string for the sidebar list
  */
 export function buildFoldersHTML( foldersData, openFolders = new Set() ) {
-	let html = '';
+  let html = '';
 
-	foldersData.forEach( folder => {
-		const isOpen = openFolders.has( folder.folder );
-		const displayStyle = isOpen ? 'block' : 'none';
-		const triangleRotation = isOpen ? ' style="transform: rotate(90deg);"' : '';
+  foldersData.forEach( folder => {
+    const isOpen            = openFolders.has( folder.folder );
+    const displayStyle      = isOpen ? 'block' : 'none';
+    const triangleRotation  = isOpen ? ' style="transform: rotate(90deg);"' : '';
 
-		html += `
-			<div class="folder-item">
-				<div class="folder-name"><span class="folder-triangle"${triangleRotation}>▶</span> ${escapeHtml( folder.folder )}</div>
-				<ul class="file-list" style="display: ${displayStyle};">`;
+    html += `
+    <div class="folder-item">
+    <div class="folder-name"><span class="folder-triangle"${triangleRotation}>▶</span> ${escapeHtml( folder.folder )}</div>
+    <ul class="file-list" style="display: ${displayStyle};">`;
 
-		folder.files.forEach( file => {
-			const modelAttr = file.modelId ? ` data-model="${escapeHtml( file.modelId )}"` : '';
-			const versionAttr = file.versionId ? ` data-version="${escapeHtml( file.versionId )}"` : '';
-			const folderAttr = ` data-folder="${escapeHtml( folder.folder )}"`;
-			const missingClass = file.exists === false ? ' missing-file' : '';
-			html += `<li class="file-item${missingClass}"${modelAttr}${versionAttr}${folderAttr}>${escapeHtml( file.name )}</li>`;
-		} );
+    folder.files.forEach( file => {
+      const modelAttr   = file.modelId ? ` data-model="${escapeHtml( file.modelId )}"` : '';
+      const versionAttr = file.versionId ? ` data-version="${escapeHtml( file.versionId )}"` : '';
+      const folderAttr  = ` data-folder="${escapeHtml( folder.folder )}"`;
+      const missingFile = file.exists === false ? ' missing-file' : '';
+      html += `<li class="file-item${missingFile}"${modelAttr}${versionAttr}${folderAttr}>${escapeHtml( file.name )}</li>`;
+    } );
 
-		html += `</ul></div>`;
-	} );
+    html += `</ul></div>`;
+  } );
 
-	return html;
+  return html;
 }
 
 /** Attach click handlers for folder toggling and file selection
- * @param {*} container the container element that holds the folder/file list
+ * @param {*} container container element for folder/file list
  */
 export function attachSidebarEventHandlers( container ) {
-  
-  // Prevent attaching multiple event listeners if they are already attached
-	if( !container || container.dataset.eventsBound === '1' ) {
-		return;
-	}
 
-	container.addEventListener( 'click', ( event ) => {
-		const folderName = event.target.closest( '.folder-name' );
-		if( folderName && container.contains( folderName ) ) {
-			toggleFolder( folderName );
-			return;
-		}
+  // Prevent attaching multiple event listeners if already attached
+  if( !container || container.dataset.eventsBound === '1' ) {
+    return;
+  }
 
-		const fileItem = event.target.closest( '.file-item' );
-		if( fileItem && container.contains( fileItem ) ) {
-			if( modelClickHandler ) {
-				modelClickHandler( fileItem );
-			}
-		}
-	} );
+  // Use event delegation to handle clicks on folders and files
+  container.addEventListener( 'click', ( event ) => {
 
-	container.dataset.eventsBound = '1';
+    // Toggle folder state when clicked
+    const folderName = event.target.closest( '.folder-name' );
+    if( folderName && container.contains( folderName ) ) {
+      toggleFolder( folderName );
+      return;
+    }
+
+    // Load specific model version when a version link is clicked
+    const fileItem = event.target.closest( '.file-item' );
+    if( fileItem && container.contains( fileItem ) ) {
+      if( modelClickHandler ) {
+        modelClickHandler( fileItem );
+      }
+    }
+
+  } );
+
+  // Mark event handlers as bound
+  container.dataset.eventsBound = '1';
 }
 
 /** Toggle visibility of a folder's file list in the sidebar
  * @param {HTMLElement} element clicked folder name element that contains the triangle and text
  */
 export function toggleFolder( element ) {
-	const fileList = element.nextElementSibling;
-	const triangle = element.querySelector( '.folder-triangle' );
+  const fileList = element.nextElementSibling;
+  const triangle = element.querySelector( '.folder-triangle' );
 
-	if( fileList.style.display === 'none' ) {
-		fileList.style.display = 'block';
-		triangle.style.transform = 'rotate(90deg)';
-	} else {
-		fileList.style.display = 'none';
-		triangle.style.transform = 'rotate(0deg)';
-	}
+  if( fileList.style.display === 'none' ) {
+    fileList.style.display    = 'block';
+    triangle.style.transform  = 'rotate(90deg)';
+  } else {
+    fileList.style.display    = 'none';
+    triangle.style.transform  = 'rotate(0deg)';
+  }
 }
 
 /** Toggle the active state of a tag in the sidebar
  * @param {HTMLElement} element the clicked tag element
  */
 export function toggleTag( element ) {
-	const tag = element.getAttribute( 'data-tag' );
+  const tag = element.getAttribute( 'data-tag' );
 
-	if( AppState.settings.activeTags.has( tag ) ) {
-		AppState.settings.activeTags.delete( tag );
-		element.classList.remove( 'active' );
-	} else {
-		AppState.settings.activeTags.add( tag );
-		element.classList.add( 'active' );
-	}
+  if( AppState.settings.activeTags.has( tag ) ) {
+    AppState.settings.activeTags.delete( tag );
+    element.classList.remove( 'active' );
+  } else {
+    AppState.settings.activeTags.add( tag );
+    element.classList.add( 'active' );
+  }
 
-	console.log( 'Active tags:', Array.from( AppState.settings.activeTags ) );
-	updateSidebarHighlighting();
+  console.log( 'Active tags:', Array.from( AppState.settings.activeTags ) );
+  updateSidebarHighlighting();
 }
 
 /** Update sidebar file highlighting based on currently active tags */
 export async function updateSidebarHighlighting() {
-	if( AppState.settings.activeTags.size === 0 ) {
-		document.querySelectorAll( '#lorasList .file-item' ).forEach( item => {
-			item.classList.remove( 'hidden' );
-		} );
-		return;
-	}
 
-	try {
-		const response = await fetch( 'api/get_model_tags.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( { tags: Array.from( AppState.settings.activeTags ) } )
-		} );
+  if( AppState.settings.activeTags.size === 0 ) {
+    document.querySelectorAll( '.file-item' ).forEach( item => {
+      item.classList.remove( 'hidden' );
+    } );
+    return;
+  }
 
-		const result = await response.json();
+  try {
+    const response = await fetch( 'api/tags/get_model_tags.php', {
+      method:   'POST',
+      headers:  { 'Content-Type': 'application/json' },
+      body:     JSON.stringify( { tags: Array.from( AppState.settings.activeTags ) } )
+    } );
 
-		if( result.success && result.matchingModels ) {
-			const fileItems = document.querySelectorAll( '#lorasList .file-item' );
+    const result = await response.json();
 
-			fileItems.forEach( item => {
-				const modelId = item.getAttribute( 'data-model' );
-				const versionId = item.getAttribute( 'data-version' );
+    if( result.success && result.matchingModels ) {
+      const fileItems = document.querySelectorAll( '.file-item' );
 
-				const matches = result.matchingModels.some( m =>
-					m.model_id == modelId && m.version_id == versionId
-				);
+      fileItems.forEach( item => {
+        const modelId    = item.getAttribute( 'data-model' );
+        const versionId  = item.getAttribute( 'data-version' );
 
-				if( matches ) {
-					item.classList.remove( 'hidden' );
-				} else {
-					item.classList.add( 'hidden' );
-				}
-			} );
+        const matches = result.matchingModels.some( m =>
+          m.model_id == modelId && m.version_id == versionId
+        );
 
-			console.log( `Showing ${result.matchingModels.length} matching loras (${fileItems.length - result.matchingModels.length} hidden)` );
-		}
-	} catch( error ) {
-		console.error( 'Error updating sidebar highlighting:', error );
-	}
+        if( matches ) {
+          item.classList.remove( 'hidden' );
+        } else {
+          item.classList.add( 'hidden' );
+        }
+      } );
+
+      console.log( `Showing ${result.matchingModels.length} matching models (${fileItems.length - result.matchingModels.length} hidden)` );
+    }
+  } catch( error ) {
+    console.error( 'Error updating sidebar highlighting:', error );
+  }
 }

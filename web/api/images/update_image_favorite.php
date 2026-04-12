@@ -3,9 +3,10 @@
  * Update Image Favorite flag
  */
 
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = api_read_json_input();
 $imageId = isset($input['imageId']) ? (int)$input['imageId'] : 0;
 $favoriteInput = $input['favorite'] ?? null;
 $modelId = isset($input['modelId']) ? (string)$input['modelId'] : '';
@@ -13,8 +14,7 @@ $modelVersionId = isset($input['modelVersionId']) ? (string)$input['modelVersion
 $imageFilename = isset($input['imageFilename']) ? trim((string)$input['imageFilename']) : '';
 
 if ($imageId <= 0) {
-  echo json_encode(['success' => false, 'error' => 'Missing or invalid imageId']);
-  exit;
+  api_send_failure('Missing or invalid imageId');
 }
 
 function normalizeFavoriteValue($value): bool {
@@ -34,7 +34,7 @@ function normalizeFavoriteValue($value): bool {
 $favorited = normalizeFavoriteValue($favoriteInput);
 
 try {
-  $cacheDir = __DIR__ . '/../cache/image_generation';
+  $cacheDir = __DIR__ . '/../../cache/image_generation';
   if (!is_dir($cacheDir)) {
     @mkdir($cacheDir, 0755, true);
   }
@@ -77,8 +77,5 @@ try {
     'favorite' => $favorited
   ]);
 } catch (Exception $e) {
-  echo json_encode([
-    'success' => false,
-    'error' => 'Exception: ' . $e->getMessage()
-  ]);
+  api_send_failure('Exception: ' . $e->getMessage(), 500);
 }

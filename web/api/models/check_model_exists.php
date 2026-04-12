@@ -5,29 +5,19 @@
  * Checks if a specific model version exists in the models table
  */
 
-header( 'Content-Type: application/json' );
-// Database connection
-$servername = "localhost";
-$username = "root";
-$password = "";
-$dbname = "civitai_models";
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = api_db_connect();
 
 if ($conn->connect_error) {
-    http_response_code(500);
-    echo json_encode(['error' => 'Database connection failed: ' . $conn->connect_error]);
-    exit;
+    api_send_error('Database connection failed: ' . $conn->connect_error, 500);
 }
 
-// Get JSON data from request body
-$json = file_get_contents('php://input');
-$data = json_decode($json, true);
+$data = api_read_json_input();
 
 if (!isset($data['versionId'])) {
-    http_response_code(400);
-    echo json_encode(['error' => 'Missing required parameter: versionId']);
-    exit;
+    api_send_error('Missing required parameter: versionId', 400);
 }
 
 $requestedModelId = isset($data['modelId']) ? intval($data['modelId']) : null;

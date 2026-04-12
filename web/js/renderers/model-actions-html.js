@@ -1,17 +1,75 @@
 import { AppState } from '../app-context.js';
 import { escapeHtml } from '../dom-utils.js';
-import { buildSettingsTablesHtml } from '../settings-ui.js';
+// import { buildSettingsTablesHtml } from '../settings-ui.js';
 
+/** Build HTML for model tags, applying "active" class to tags that are currently active in settings
+ * @param {*} modelTags Array of tag strings to build HTML for
+ * @returns {string} HTML string representing the model tags
+ */
 export function buildModelTagsHtml( modelTags ) {
 	let modelTagsHtml = '';
 
 	modelTags.forEach( tag => {
-		const activeClass = AppState.settings.activeTags.has( tag ) ? ' active' : '';
-		modelTagsHtml += `<div class="model-tag${activeClass}" data-tag="${escapeHtml( tag )}">${escapeHtml( tag )}</div>`;
+
+		const activeClass = AppState.settings.activeTags.has( tag )
+			? ' active'
+			: '';
+
+		modelTagsHtml += `<div class="model-tag${
+			activeClass
+		}" data-tag="${
+			escapeHtml( tag )
+		}">${
+			escapeHtml( tag )
+		}</div>`;
 	} );
 
 	return modelTagsHtml;
 }
+
+
+/** Build complete HTML for model information and actions view
+ * @param {Object} params									Parameters for building HTML
+ * @param {Object} params.result					Result object containing model and version data
+ * @param {Object} params.selectedVersion Currently selected version object
+ * @param {string} params.modelType				Type of model
+ * @param {string} params.trpcDescription Description from TRPC (if available)
+ * @param {string} params.safetensorsFile Original filename from Civitai (if available)
+ * @param {string} params.trainedWords		Comma-separated trigger words (if available)
+ * @returns {string} Complete HTML string to render
+ */
+export function buildFetchDataHtml( {
+	result,
+	selectedVersion,
+	modelType,
+	trpcDescription,
+	safetensorsFile,
+	trainedWords
+} ) {
+	let html = '';
+
+	if( selectedVersion ) {
+		html += buildVersionInfoHtml( {
+			result,
+			version: selectedVersion,
+			modelType,
+			safetensorsFile,
+			trainedWords
+		} );
+		html += buildTrpcDescriptionHtml( trpcDescription );
+	} else {
+		html += buildVersionSelectionWarningHtml( result.versionSelectionMethod );
+	}
+
+	html += buildCacheInfoSectionHtml();
+	html += buildThumbnailControlsSectionHtml();
+	html += buildImagesSectionHtml();
+	html += buildWorkflowAnalysisSectionHtml();
+
+	return html;
+}
+
+
 
 export function buildVersionLinksHtml( modelVersions, selectedVersionId ) {
 	let versionLinksHtml = '';
@@ -28,10 +86,23 @@ export function buildVersionLinksHtml( modelVersions, selectedVersionId ) {
 }
 
 export function buildVersionInfoHtml( { result, version, modelType, safetensorsFile, trainedWords } ) {
+	// Settings/settingsTablesContainer is currently obsolete due Workflow Analysis tools.
+	// Keep the old markup commented for quick restoration later.
+	const settingsSectionHtml = '';
+	/*
+	const settingsSectionHtml = `
+		<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
+			<strong>Settings</strong>
+		</div>
+		<div id="settingsTablesContainer">${buildSettingsTablesHtml( AppState.settings.currentSettingsSets, true )}</div>
+		${AppState.model.currentModelExistsInDb ? '<div style="display: flex; justify-content: flex-end; margin-top: 10px;"><button id="addSettingsSetBtn" data-action="add-settings-set" style="padding: 4px 10px; font-size: 12px;">Add set</button></div>' : ''}
+	`;
+	*/
+
 	return `
 		<div class="info success">
 			<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
-				<div class="editable-filename" contenteditable="true" data-original="${escapeHtml( AppState.model.currentFilename || '' )}" data-original-file="${escapeHtml( safetensorsFile || '' )}" style="flex: 1;">${escapeHtml( AppState.model.currentFilename || 'Unknown' )}</div>
+				<div class="editable-filename" contenteditable="true" data-original="${escapeHtml( AppState.model.currentFilename || '' )}" data-original-filename="${escapeHtml( safetensorsFile || '' )}" style="flex: 1;">${escapeHtml( AppState.model.currentFilename || 'Unknown' )}</div>
 				<button class="reset-filename-btn" data-action="reset-filename" style="padding: 8px 16px; background: #f39c12; border: none; border-radius: 4px; color: white; cursor: pointer; font-weight: bold; white-space: nowrap;">Reset</button>
 			</div>
 			${result.versionSelectionMethod ? `<div class="matched"><em>${escapeHtml( result.versionSelectionMethod )}</em></div>` : ''}
@@ -79,11 +150,7 @@ export function buildVersionInfoHtml( { result, version, modelType, safetensorsF
 					<td class="filename" style="color: #8fd19e;">${escapeHtml( safetensorsFile )}</td>
 				</tr>` : '' )}
 			</table>
-			<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
-				<strong>Settings</strong>
-			</div>
-			<div id="settingsTablesContainer">${buildSettingsTablesHtml( AppState.settings.currentSettingsSets, true )}</div>
-			${AppState.model.currentModelExistsInDb ? '<div style="display: flex; justify-content: flex-end; margin-top: 10px;"><button id="addSettingsSetBtn" data-action="add-settings-set" style="padding: 4px 10px; font-size: 12px;">Add set</button></div>' : ''}
+			${settingsSectionHtml}
 		</div>
 	`;
 }
@@ -181,26 +248,3 @@ export function buildWorkflowAnalysisSectionHtml() {
 	`;
 }
 
-export function buildFetchDataHtml( { result, selectedVersion, modelType, trpcDescription, safetensorsFile, trainedWords } ) {
-	let html = '';
-
-	if( selectedVersion ) {
-		html += buildVersionInfoHtml( {
-			result,
-			version: selectedVersion,
-			modelType,
-			safetensorsFile,
-			trainedWords
-		} );
-		html += buildTrpcDescriptionHtml( trpcDescription );
-	} else {
-		html += buildVersionSelectionWarningHtml( result.versionSelectionMethod );
-	}
-
-	html += buildCacheInfoSectionHtml();
-	html += buildThumbnailControlsSectionHtml();
-	html += buildImagesSectionHtml();
-	html += buildWorkflowAnalysisSectionHtml();
-
-	return html;
-}

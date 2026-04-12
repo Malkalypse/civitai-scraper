@@ -1,16 +1,19 @@
-import { AppState, modelIdInput, output } from './app-context.js';
+import { toggleTag } from './sidebar.js';
+import { loadModelVersion } from './model-loading.js';
+import { resetFilename, handleFilenameKeydown, handleOriginalFilenameKeydown } from './file-editing.js';
+// import { addSettingsSet } from './settings-ui.js';
+
+import { AppState, modelInput, output } from './app-context.js';
 import { escapeHtml } from './dom-utils.js';
-import { addSettingsSet } from './settings-ui.js';
+
 import { setupWorkflowAnalysisVisibilityObserver, applyGenerationPreviewVisibility, loadVersionWorkflowFilters, toggleGenerationPreview } from './filters.js';
 import { updateThumbnailSize, loadModelImages } from './image-gallery.js';
-import { toggleTag } from './sidebar.js';
+
 import { fetchOriginalFilename, checkModelInDatabase } from './db-sync.js';
-import { handleFilenameKeydown, handleOriginalFilenameKeydown, saveFilename, saveOriginalFilename, resetFilename } from './file-editing.js';
 import { buildModelTagsHtml, buildVersionLinksHtml, buildFetchDataHtml } from './renderers/model-actions-html.js';
-import { loadModelVersion } from './model-loading.js';
 
 
-// Initialize event handlers for model actions
+/** Initialize event handlers for model actions */
 function initializeModelActionsHandlers() {
 
   // Use a property on the function to track initialization state
@@ -18,43 +21,54 @@ function initializeModelActionsHandlers() {
 		return;
 	}
 
-	const modelTagsContainer = document.getElementById( 'modelTagsContainer' );
-	if( modelTagsContainer ) {
-		modelTagsContainer.addEventListener( 'click', ( event ) => {
+	// Set up click handler to toggle tags
+	const tagsContainer = document.getElementById( 'tagsContainer' );
+	if( tagsContainer ) {
+		tagsContainer.addEventListener( 'click', ( event ) => {
 			const tagElement = event.target.closest( '.model-tag' );
-			if( tagElement && modelTagsContainer.contains( tagElement ) ) {
-				toggleTag( tagElement );
+			if( tagElement && tagsContainer.contains( tagElement ) ) {
+				toggleTag( tagElement ); // sidebar.js
 			}
 		} );
 	}
 
-	const versionLinksContainer = document.getElementById( 'versionLinksContainer' );
-	if( versionLinksContainer ) {
-		versionLinksContainer.addEventListener( 'click', ( event ) => {
+	// Set up click handler to load specific model version
+	const versionsContainer = document.getElementById( 'versionsContainer' );
+	if( versionsContainer ) {
+		versionsContainer.addEventListener( 'click', ( event ) => {
 			const versionLink = event.target.closest( '.version-link' );
-			if( versionLink && versionLinksContainer.contains( versionLink ) ) {
-				const modelVersionString = versionLink.dataset.modelVersion || '';
-				if( modelVersionString ) {
-					loadModelVersion( modelVersionString );
+			if( versionLink && versionsContainer.contains( versionLink ) ) {
+				const versionString = versionLink.dataset.modelVersion || '';
+				if( versionString ) {
+					loadModelVersion( versionString ); // model-loading.js
 				}
 			}
 		} );
 	}
 
 	if( output ) {
+
+		// Set up click handlers
 		output.addEventListener( 'click', ( event ) => {
+
+			// Reset filename
 			const resetFilenameBtn = event.target.closest( '[data-action="reset-filename"]' );
 			if( resetFilenameBtn && output.contains( resetFilenameBtn ) ) {
-				resetFilename();
+				resetFilename(); // file-editing.js
 				return;
 			}
 
+			// Settings tools are currently obsolete due Workflow Analysis tools.
+			// Keep old add-settings-set handler commented for possible future restoration.
+			/*
 			const addSettingsSetBtn = event.target.closest( '[data-action="add-settings-set"]' );
 			if( addSettingsSetBtn && output.contains( addSettingsSetBtn ) ) {
-				addSettingsSet();
+				addSettingsSet();	// settings-ui.js
 				return;
 			}
+			*/
 
+			// Clear cache for model or all models
 			const clearCacheBtn = event.target.closest( '[data-action="clear-cache"]' );
 			if( clearCacheBtn && output.contains( clearCacheBtn ) ) {
 				const modelId = clearCacheBtn.dataset.modelId || null;
@@ -62,42 +76,35 @@ function initializeModelActionsHandlers() {
 				return;
 			}
 
+			// [Show/Hide Params|Prompts|Non-Workflow|Non-Favorites] buttons
 			const togglePreviewBtn = event.target.closest( '[data-toggle-type]' );
 			if( togglePreviewBtn && output.contains( togglePreviewBtn ) ) {
-				toggleGenerationPreview( togglePreviewBtn.dataset.toggleType );
+				toggleGenerationPreview( togglePreviewBtn.dataset.toggleType ); // filters.js
 			}
 		} );
 
+		// Set up change handler for thumbnail size select
 		output.addEventListener( 'change', ( event ) => {
 			const thumbnailSizeSelect = event.target.closest( '#thumbnailSize' );
 			if( thumbnailSizeSelect && output.contains( thumbnailSizeSelect ) ) {
-				updateThumbnailSize( thumbnailSizeSelect.value );
+				updateThumbnailSize( thumbnailSizeSelect.value ); // image-gallery.js
 			}
 		} );
 
+		// Set up keydown handlers 
 		output.addEventListener( 'keydown', ( event ) => {
+
+			// Set up keydown handler for filename editing		
 			const editableFilename = event.target.closest( '.editable-filename' );
 			if( editableFilename && output.contains( editableFilename ) ) {
-				handleFilenameKeydown( event, editableFilename );
+				handleFilenameKeydown( event, editableFilename ); // file-editing.js
 				return;
 			}
 
+			// Set up keydown handler for original filename editing
 			const editableOriginalFilename = event.target.closest( '.editable-original-filename' );
 			if( editableOriginalFilename && output.contains( editableOriginalFilename ) ) {
-				handleOriginalFilenameKeydown( event, editableOriginalFilename );
-			}
-		} );
-
-		output.addEventListener( 'focusout', ( event ) => {
-			const editableFilename = event.target.closest( '.editable-filename' );
-			if( editableFilename && output.contains( editableFilename ) ) {
-				saveFilename( editableFilename );
-				return;
-			}
-
-			const editableOriginalFilename = event.target.closest( '.editable-original-filename' );
-			if( editableOriginalFilename && output.contains( editableOriginalFilename ) ) {
-				saveOriginalFilename( editableOriginalFilename );
+				handleOriginalFilenameKeydown( event, editableOriginalFilename ); // file-editing.js
 			}
 		} );
 	}
@@ -105,37 +112,35 @@ function initializeModelActionsHandlers() {
 	initializeModelActionsHandlers.initialized = true; // mark as initialized
 }
 
-/**
- * Clear the cache for a specific model or all models
- * @param {*} modelId 
- * @returns 
+/** Clear cache for specific model or all models
+ * @param {*} modelId model ID to clear cache for (null to clear entire cache)
  */
 export async function clearCache( modelId = null ) {
-	const action = modelId ? 'clearModel' : 'clearAll';
-	const confirmMsg = modelId ?
-		'Clear cache for this model?' :
-		'Clear entire image cache?';
+	const action			= modelId ? 'clearModel' : 'clearAll';
+	const confirmMsg	= modelId ? 'Clear cache for this model?' : 'Clear entire image cache?';
 
 	if( !confirm( confirmMsg ) ) return;
 
 	try {
-		const response = await fetch( 'api/cache_manager.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( { action: action, modelId: modelId } )
+		const response = await fetch( 'api/images/cache_manager.php', {
+			method:		'POST',
+			headers:	{ 'Content-Type': 'application/json' },
+			body:			JSON.stringify( { action: action, modelId: modelId } )
 		} );
 		const result = await response.json();
 
 		if( result.success ) {
-			const deletedImageCount = Number( result.deletedImageCount || 0 );
-			const deletedMetadataCount = Number( result.deletedMetadataCount || 0 );
-			const deletedImageSizeMB = Number( result.deletedImageSizeMB || 0 );
-			const deletedMetadataSizeMB = Number( result.deletedMetadataSizeMB || 0 );
+			const deletedImageCount			= Number( result.deletedImageCount || 0 );
+			const deletedMetadataCount	= Number( result.deletedMetadataCount || 0 );
+			const deletedImageSizeMB		= Number( result.deletedImageSizeMB || 0 );
+			const deletedMetadataSizeMB	= Number( result.deletedMetadataSizeMB || 0 );
+
 			alert(
 				`Cleared ${result.deletedCount} files (${result.deletedSizeMB} MB)\n` +
 				`Images: ${deletedImageCount} (${deletedImageSizeMB} MB)\n` +
 				`Generation JSON: ${deletedMetadataCount} (${deletedMetadataSizeMB} MB)`
 			);
+			
 			fetchData();
 		}
 	} catch( error ) {
@@ -147,151 +152,49 @@ export async function clearCache( modelId = null ) {
 initializeModelActionsHandlers();
 
 
-/** Fetch model data based on current modelIdInput value and update UI accordingly
+/** Fetch model data based on current modelInput value and update UI accordingly
  * @param {*} options Optional settings for the fetch operation
  * - If options.preserveFilename is true, it will not reset the current filename in AppState before fetching. * 
  */
 export async function fetchData( options = {} ) {
 
-  // Reset current filename before fetching new data (unless preserveFilename is true)
-  const { preserveFilename = false } = options;
-	if( !preserveFilename ) {
-		AppState.model.currentFilename = null; 
-	}
-
-  // Get model ID from input field
-	const modelId = modelIdInput.value.trim(); // 
-
-  // Show error if model ID is empty
-	if( !modelId ) {
-		output.innerHTML = '<div class="error">Please enter a model ID</div>'; 
+	// Prepare state and UI for fetching model data
+	const requestState = prepareFetchDataRequest( options );
+	if( !requestState ) {
 		return;
 	}
 
-  // Increment image load token
-	const imageLoadToken = ++AppState.runtime.currentImageLoadToken; 
+	// Destructure modelInput and imageLoadToken from prepared request state
+	const { modelInput, imageLoadToken } = requestState;
 
-  // Reset UI elements and show loading state
-	document.getElementById( 'modelTags' ).classList.remove( 'visible' );
-	document.getElementById( 'versionLinks' ).classList.remove( 'visible' );
-	document.getElementById( 'addToDbSection' ).style.display = 'none';
+	console.log( `Initiating fetchData for modelInput: ${modelInput} with options:`, options );
 
-  // Reset model-related AppState properties
-	const existingCarousel = document.getElementById( 'carouselContainer' );
-	if( existingCarousel ) existingCarousel.dataset.loading = 'false';
-	const existingGallery = document.getElementById( 'galleryContainer' );
-	if( existingGallery ) existingGallery.dataset.loading = 'false';
-
-  // Show loading message while fetching data
-	output.innerHTML = '<div class="loading">Fetching model data...</div>';
-
-  // Fetch model data from server using provided model ID
 	try {
+		// Fetch model data
+		const result = await fetchModelInput( modelInput );
 
-    // Make POST request to fetch model data (including cache buster)
-		const cacheBuster = new Date().getTime();
-		const response = await fetch( `api/fetch_data.php?_=${cacheBuster}`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'Cache-Control': 'no-cache'
-			},
-			body: JSON.stringify( { modelId } )
-		} );
-		const result = await response.json();
-
-    // Handle response errors
+		// If result contains an error message, display it
 		if( result.error ) {
 			output.innerHTML = `<div class="error">${escapeHtml( result.error )}</div>`;
 
-    // If data is returned successfully, update AppState and UI accordingly
-    } else if( result.data ) {
+		// If result contains data, process and render it
+		} else if( result.data ) {
 
-      // Extract selected version and model data from response
-			const selectedVersion               = result.selectedVersion || null;
-			AppState.model.currentModelJsonData = result.data;
-			AppState.model.currentModelId       = result.modelId || modelId.split( '?' )[0];
+			// Extract model context information and apply result
+			const selectedVersion = result.selectedVersion || null;
+			await applyResult( result, modelInput, selectedVersion );
 
-      // Update AppState with selected version information if available
-			if( selectedVersion && selectedVersion.id ) {
-				AppState.model.currentVersionId     = selectedVersion.id;
-				AppState.model.currentModelIdForDb  = AppState.model.currentModelId;
-			}
+			renderTags( result );
 
-      // Reset other model-related AppState properties
-			AppState.model.currentOriginalFilename    = null;
-			AppState.model.currentModelExistsInDb     = false;
-			AppState.settings.currentSettingsSets     = [];
-			AppState.settings.currentSamplerOptions   = [];
-			AppState.settings.currentSchedulerOptions = [];
-			AppState.settings.currentSettingsShowAll  = {};
+			// Render version links based on extracted model versions and selected version
+			const { modelVersions, modelType, trpcDescription } = modelContext( result );
+			renderVersionLinks( modelVersions, selectedVersion );
 
-      // Check if the currently selected model/version exists in the database and update AppState accordingly
-			await checkModelInDatabase( AppState.model.currentModelId, selectedVersion );
+			// Resolve additional display data for selected version
+			const { safetensorsFile, trainedWords } = await resolveDisplayData( selectedVersion );
 
-      // Update UI with fetched data using renderer functions
-			if( result.modelTags && Array.isArray( result.modelTags ) && result.modelTags.length > 0 ) {
-				const modelTagsContainer      = document.getElementById( 'modelTagsContainer' );
-				modelTagsContainer.innerHTML  = buildModelTagsHtml( result.modelTags );
-				document.getElementById( 'modelTags' ).classList.add( 'visible' );
-			}
-
-      // Build and display version links, model tags, and other fetched data in the UI
-			const modelVersions   = result.data?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.modelVersions;
-			const modelType       = result.data?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.type;
-			const trpcQueries     = result.data?.props?.pageProps?.trpcState?.json?.queries;
-			const trpcDescription = Array.isArray( trpcQueries )
-				? ( trpcQueries.find( query => typeof query?.state?.data?.description === 'string' )?.state?.data?.description || '' )
-				: '';
-
-      // Load model images based on the currently selected version and the new image load token
-			if( modelVersions && Array.isArray( modelVersions ) && modelVersions.length > 0 ) {
-				const versionLinksContainer     = document.getElementById( 'versionLinksContainer' );
-				const selectedVersionId         = selectedVersion?.id || null;
-				versionLinksContainer.innerHTML = buildVersionLinksHtml( modelVersions, selectedVersionId );
-				document.getElementById( 'versionLinks' ).classList.add( 'visible' );
-			}
-
-      // Prepare variables for original filename and trained words to be displayed in the UI
-			let safetensorsFile = '';
-			let trainedWords    = '';
-
-      // Determine original filename for currently selected model version (from database or by fetching it)
-			if( selectedVersion ) {
-
-        // Store the selected version base model
-				if( selectedVersion.baseModel ) {
-					AppState.model.currentBaseModel = selectedVersion.baseModel;
-				}
-
-        // If the model/version exists in the database, use the original filename from the database
-				if( AppState.model.currentModelExistsInDb ) {
-					safetensorsFile = ( typeof AppState.model.currentOriginalFilename === 'string' && AppState.model.currentOriginalFilename.trim() !== '' )
-						? AppState.model.currentOriginalFilename.trim()
-						: '';
-
-        // Otherwise, fetch the original filename from the API
-				} else {
-					safetensorsFile = await fetchOriginalFilename( selectedVersion.id );
-				}
-
-        // Set the current filename in AppState if not already stored (e.g. from database check) and a safetensors file is available
-				if( safetensorsFile && ( !AppState.model.currentModelExistsInDb || !AppState.model.currentFilename ) ) {
-					if( safetensorsFile.endsWith( '.safetensors' ) ) {
-						AppState.model.currentFilename = safetensorsFile.substring( 0, safetensorsFile.length - 12 );
-					} else {
-						AppState.model.currentFilename = safetensorsFile;
-					}
-				}
-
-        // If the selected version has trained words, format them for display in the UI
-				if( selectedVersion.trainedWords && Array.isArray( selectedVersion.trainedWords ) ) {
-					trainedWords = selectedVersion.trainedWords.map( w => `<code class="trigger-word">${escapeHtml( w )}</code>` ).join( '<br>' );
-				}
-			}
-
-      // Build the main content HTML with fetched data and render to output container
-			output.innerHTML = buildFetchDataHtml( {
+			// Build and render main model information section
+			output.innerHTML = buildFetchDataHtml( { // model-actions-html.js
 				result,
 				selectedVersion,
 				modelType,
@@ -300,48 +203,233 @@ export async function fetchData( options = {} ) {
 				trainedWords
 			} );
 
-      // Set up event handlers for the newly rendered content
-			setupWorkflowAnalysisVisibilityObserver();
-			applyGenerationPreviewVisibility();
-			loadVersionWorkflowFilters( selectedVersion?.id || AppState.model.currentVersionId );
+			// Initialize model view and load model images
+			initializeModelView( selectedVersion );
+			updateCacheDisplay( AppState.model.currentModelId );
+			loadModelImages( AppState.model.currentModelId, selectedVersion, imageLoadToken ); // image-gallery.js
 
-      // Get the cache size for the current model and update the UI
-			getCacheSize( AppState.model.currentModelId ).then( cacheInfo => {
-				if( cacheInfo ) {
-					const cacheInfoDiv = document.getElementById( 'cacheInfo' );
-					cacheInfoDiv.innerHTML = `
-						<div>
-							<strong>Model cache:</strong> ${cacheInfo.modelSizeMB} MB
-							<button data-action="clear-cache" data-model-id="${escapeHtml( AppState.model.currentModelId )}" style="margin-left: 10px; padding: 2px 8px; background: #c92a2a; border: none; border-radius: 3px; color: white; cursor: pointer; font-size: 11px;">Clear</button>
-						</div>
-						<div>
-							<strong>Total cache:</strong> ${cacheInfo.totalSizeMB} MB (${cacheInfo.fileCount} files)
-							<button data-action="clear-cache" style="margin-left: 10px; padding: 2px 8px; background: #c92a2a; border: none; border-radius: 3px; color: white; cursor: pointer; font-size: 11px;">Clear All</button>
-						</div>
-					`;
-				}
-			} );
-
-			// Set thumbnail size select element to current AppState value
-			const thumbnailSizeSelect = document.getElementById( 'thumbnailSize' );
-			if( thumbnailSizeSelect ) {
-				thumbnailSizeSelect.value = AppState.ui.thumbnailSize;
-			}
-
-      // Load model images for the currently selected version
-			loadModelImages( AppState.model.currentModelId, selectedVersion, imageLoadToken );
-
-    // If no data found, show error message
+		// If result does not contain data, display generic error message
 		} else {
 			output.innerHTML = '<div class="error">No data found in response</div>';
 		}
 
-  // Handle fetch errors
+	// Catch and display any errors that occur during the fetch or processing
 	} catch( error ) {
 		output.innerHTML = `<div class="error">Error: ${escapeHtml( error.message )}</div>`;
 	}
 
 }
+
+/** Prepare state and UI for fetching model data
+ * @param {*} options Optional settings for the fetch operation
+ * - If options.preserveFilename is true, does not reset current filename in AppState before fetching
+ * @returns Object containing modelInput and imageLoadToken (or null)
+ */
+function prepareFetchDataRequest( options = {} ) {
+
+	// Determine whether to preserve the current filename (default is false)
+  const { preserveFilename = false } = options;
+	if( !preserveFilename ) {
+		AppState.model.currentFilename = null;
+	}
+
+	// Get and validate the model ID from the input field
+	const userModelInput = modelInput.value.trim();
+	if( !userModelInput ) {
+		output.innerHTML = '<div class="error">Please enter a model ID</div>';
+		return null;
+	}
+
+	// Increment the global image load token to track the current fetch operation
+	const imageLoadToken = ++AppState.runtime.currentImageLoadToken;
+
+	// Hide model tags, version links, and add to database section
+	document.getElementById( 'modelTags' ).classList.remove( 'visible' );
+	document.getElementById( 'versionLinks' ).classList.remove( 'visible' );
+	document.getElementById( 'addToDbSection' ).style.display = 'none';
+
+	// Hide the carousel container if it exists
+	const existingCarousel = document.getElementById( 'carouselContainer' );
+	if( existingCarousel ) {
+		existingCarousel.dataset.loading = 'false';
+	}
+
+	// Hide the gallery container if it exists
+	const existingGallery = document.getElementById( 'galleryContainer' );
+	if( existingGallery ) {
+		existingGallery.dataset.loading = 'false';
+	}
+
+	output.innerHTML = '<div class="loading">Fetching model data...</div>';
+
+	return { modelInput: userModelInput, imageLoadToken };
+}
+
+/** Fetch model data from server
+ * @param {*} modelInput The input to fetch model data for
+ * @returns A promise that resolves to the fetched model data
+ */
+async function fetchModelInput( modelInput ) {
+
+	const cacheBuster = new Date().getTime();
+
+	const response = await fetch( `api/models/fetch_data.php?_=${cacheBuster}`, {
+		method: 'POST',
+		headers: {
+			'Content-Type':		'application/json',
+			'Cache-Control':	'no-cache'
+		},
+		body: JSON.stringify( { modelInput: modelInput } )
+	} );
+
+	const result = await response.json();
+	if ( result.debug ) {
+		console.log( '[fetch_data debug]', result.debug );
+	}
+	return result;
+}
+
+/** Apply fetched model data and check if model exists in database
+ * - Uupdates properties in AppState.model based on fetched result and selected version
+ * - After updating, calls checkModelInDatabase() to verify model existence in database
+ * @param {*} result					The fetched model data
+ * @param {*} modelInput				The full model input string
+ * @param {*} selectedVersion	The selected version of the model
+ */
+async function applyResult( result, modelInput, selectedVersion ) {
+	AppState.model.currentModelJsonData	= result.data;
+	AppState.model.currentModelId				= result.modelId || modelInput.split( '?' )[0];
+
+	if( selectedVersion && selectedVersion.id ) {
+		AppState.model.currentVersionId			= selectedVersion.id;
+		AppState.model.currentModelIdForDb	= AppState.model.currentModelId;
+	}
+
+	AppState.model.currentOriginalFilename		= null;
+	AppState.model.currentModelExistsInDb			= false;
+	AppState.settings.currentSettingsSets			= [];
+	AppState.settings.currentSamplerOptions		= [];
+	AppState.settings.currentSchedulerOptions	= [];
+	AppState.settings.currentSettingsShowAll	= {};
+
+	await checkModelInDatabase( AppState.model.currentModelId, selectedVersion );
+}
+
+/** Extract model context information
+ * @param {*} result The fetched model data result object
+ * @returns An object containing modelVersions, modelType, and trpcDescription
+ */
+function modelContext( result ) {
+	const modelVersions		= result.data?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.modelVersions;
+	const modelType				= result.data?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.type;
+	const trpcQueries			= result.data?.props?.pageProps?.trpcState?.json?.queries;
+	const trpcDescription	= Array.isArray( trpcQueries )
+		? ( trpcQueries.find( query => typeof query?.state?.data?.description === 'string' )?.state?.data?.description || '' )
+		: '';
+
+	return {
+		modelVersions,
+		modelType,
+		trpcDescription
+	};
+}
+
+/** Render model tags section
+ * @param {*} result Fetched model data result object containing model tags information
+ */
+function renderTags( result ) {
+	if( result.modelTags && Array.isArray( result.modelTags ) && result.modelTags.length > 0 ) {
+		const tagsContainer			= document.getElementById( 'tagsContainer' );
+		tagsContainer.innerHTML	= buildModelTagsHtml( result.modelTags );
+		document.getElementById( 'modelTags' ).classList.add( 'visible' );
+	}
+}
+
+/** Render version links section
+ * @param {*} modelVersions Fetched model versions array
+ * @param {*} selectedVersion Selected version object
+ */
+function renderVersionLinks( modelVersions, selectedVersion ) {
+	if( modelVersions && Array.isArray( modelVersions ) && modelVersions.length > 0 ) {
+		const versionsContainer			= document.getElementById( 'versionsContainer' );
+		const selectedVersionId					= selectedVersion?.id || null;
+		versionsContainer.innerHTML	= buildVersionLinksHtml( modelVersions, selectedVersionId );
+		document.getElementById( 'versionLinks' ).classList.add( 'visible' );
+	}
+}
+
+/** Resolve display data for selected version
+ * @param {*} selectedVersion Selected version object
+ * @returns {Promise<{ safetensorsFile: string, trainedWords: string }>} An object containing safetensorsFile and trainedWords
+ */
+async function resolveDisplayData( selectedVersion ) {
+	let safetensorsFile = '';
+	let trainedWords = '';
+
+	if( selectedVersion ) {
+		if( selectedVersion.baseModel ) {
+			AppState.model.currentBaseModel = selectedVersion.baseModel;
+		}
+
+		if( AppState.model.currentModelExistsInDb ) {
+			safetensorsFile = ( typeof AppState.model.currentOriginalFilename === 'string' && AppState.model.currentOriginalFilename.trim() !== '' )
+				? AppState.model.currentOriginalFilename.trim()
+				: '';
+		} else {
+			safetensorsFile = await fetchOriginalFilename( selectedVersion.id );
+		}
+
+		if( safetensorsFile && ( !AppState.model.currentModelExistsInDb || !AppState.model.currentFilename ) ) {
+			if( safetensorsFile.endsWith( '.safetensors' ) ) {
+				AppState.model.currentFilename = safetensorsFile.substring( 0, safetensorsFile.length - 12 );
+			} else {
+				AppState.model.currentFilename = safetensorsFile;
+			}
+		}
+
+		if( selectedVersion.trainedWords && Array.isArray( selectedVersion.trainedWords ) ) {
+			trainedWords = selectedVersion.trainedWords.map( w => `<code class="trigger-word">${escapeHtml( w )}</code>` ).join( '<br>' );
+		}
+	}
+
+	return { safetensorsFile, trainedWords };
+}
+
+/** Initialize rendered model view (e.g. setup observers, load workflow filters, etc.)
+ * @param {*} selectedVersion Selected version object
+ */
+function initializeModelView( selectedVersion ) {
+	setupWorkflowAnalysisVisibilityObserver();
+	applyGenerationPreviewVisibility();
+	loadVersionWorkflowFilters( selectedVersion?.id || AppState.model.currentVersionId );
+
+	const thumbnailSizeSelect = document.getElementById( 'thumbnailSize' );
+	if( thumbnailSizeSelect ) {
+		thumbnailSizeSelect.value = AppState.ui.thumbnailSize;
+	}
+}
+
+/** Update cache info display and load model images
+ * @param {string} modelId ID of the model
+ */
+function updateCacheDisplay( modelId ) {
+	getCacheSize( modelId ).then( cacheInfo => {
+		if( cacheInfo ) {
+			const cacheInfoDiv = document.getElementById( 'cacheInfo' );
+			cacheInfoDiv.innerHTML = `
+				<div>
+					<strong>Model cache:</strong> ${cacheInfo.modelSizeMB} MB
+					<button data-action="clear-cache" data-model-id="${escapeHtml( modelId )}" style="margin-left: 10px; padding: 2px 8px; background: #c92a2a; border: none; border-radius: 3px; color: white; cursor: pointer; font-size: 11px;">Clear</button>
+				</div>
+				<div>
+					<strong>Total cache:</strong> ${cacheInfo.totalSizeMB} MB (${cacheInfo.fileCount} files)
+					<button data-action="clear-cache" style="margin-left: 10px; padding: 2px 8px; background: #c92a2a; border: none; border-radius: 3px; color: white; cursor: pointer; font-size: 11px;">Clear All</button>
+				</div>
+			`;
+		}
+	} );
+}
+
 
 /** Get the cache size for a specific model or overall cache
  * @param {string|null} modelId the model ID to check cache size for, or null to get overall cache size
@@ -354,7 +442,7 @@ export async function fetchData( options = {} ) {
  */
 export async function getCacheSize( modelId ) {
 	try {
-		const response = await fetch( 'api/cache_manager.php', {
+		const response = await fetch( 'api/images/cache_manager.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { action: 'getSize', modelId: modelId } )

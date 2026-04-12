@@ -163,7 +163,7 @@ export async function loadVersionWorkflowFilters( versionId ) {
 	}
 
 	try {
-		const response = await fetch( 'api/get_version_workflows.php', {
+		const response = await fetch( 'api/settings/get_version_workflows.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { versionId: normalizedVersionId } )
@@ -208,6 +208,7 @@ export async function loadVersionWorkflowFilters( versionId ) {
 
 export function applyImageCardFilters() {
 	document.querySelectorAll( '.image-card' ).forEach( card => {
+		const imageContainer = card.closest( '.image-container' );
 		const favoriteLoaded = card.dataset.favoriteLoaded === '1';
 		const workflowLoaded = card.dataset.workflowLoaded === '1';
 		const favorite = card.dataset.favorite === '1';
@@ -217,8 +218,13 @@ export function applyImageCardFilters() {
 		const hideForWorkflow = AppState.ui.hideNonWorkflowImages && workflowLoaded && workflowNull;
 		const hideForFavorite = AppState.ui.hideNonFavoriteImages && favoriteLoaded && !favorite;
 		const hideForSelectedWorkflow = AppState.workflow.activeWorkflowFilterKey !== 'all' && cardWorkflowKey !== AppState.workflow.activeWorkflowFilterKey;
+		const shouldHide = hideForWorkflow || hideForFavorite || hideForSelectedWorkflow;
 
-		card.style.display = hideForWorkflow || hideForFavorite || hideForSelectedWorkflow ? 'none' : 'inline-flex';
+		if( imageContainer ) {
+			imageContainer.style.display = shouldHide ? 'none' : '';
+		}
+
+		card.style.display = '';
 	} );
 
 	updateGenerationPreviewToggleButtons();

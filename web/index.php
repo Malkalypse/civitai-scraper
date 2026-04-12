@@ -25,7 +25,7 @@
 			<!-- Input group for model ID -->
 			<div class="input-group">
 				<span class="url-prefix">https://civitai.com/models/</span>
-				<input type="text" id="modelId" placeholder="Enter model ID (e.g., 43331)" autofocus>
+				<input type="text" id="modelInput" placeholder="Enter model ID (e.g., 43331)" autofocus>
 				<button id="sourceBtn">Source</button>
 			</div>
 
@@ -39,12 +39,12 @@
 
 			<div id="modelTags" class="version-links">
 				<div class="title">Tags:</div>
-				<div id="modelTagsContainer" class="version-links-container"></div>
+				<div id="tagsContainer" class="version-links-container"></div>
 			</div>
 
 			<div id="versionLinks" class="version-links">
 				<div class="title">Versions:</div>
-				<div id="versionLinksContainer" class="version-links-container"></div>
+				<div id="versionsContainer" class="version-links-container"></div>
 			</div>
 
 			<div id="output"></div>

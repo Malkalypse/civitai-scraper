@@ -11,8 +11,8 @@ $input = json_decode(file_get_contents('php://input'), true);
 $action = $input['action'] ?? null;
 $modelId = $input['modelId'] ?? null;
 
-$cacheDir = __DIR__ . '/../cache/images';
-$generationDir = __DIR__ . '/../cache/image_generation';
+$cacheDir = __DIR__ . '/../../cache/images';
+$generationDir = __DIR__ . '/../../cache/image_generation';
 
 // Create cache directory if it doesn't exist
 if (!file_exists($cacheDir)) {
@@ -77,6 +77,7 @@ switch ($action) {
     // Calculate total cache size
     $totalSize = 0;
     $modelSize = 0;
+    $fileCount = 0;
 
     [$metadataByModel] = loadGenerationMetadataByModel($generationDir, null);
     $modelFilenames = [];
@@ -89,8 +90,9 @@ switch ($action) {
     $files = glob($cacheDir . '/*');
     foreach ($files as $file) {
       if (is_file($file) && strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'json') {
-        $fileSize = filesize($file);
+        $fileSize = getFileSizeBytes($file);
         $totalSize += $fileSize;
+        $fileCount++;
         
         // Check if this file belongs to the current model
         $filename = basename($file);
@@ -105,9 +107,7 @@ switch ($action) {
       'totalSizeMB' => round($totalSize / 1048576, 2),
       'modelSize' => $modelSize,
       'modelSizeMB' => round($modelSize / 1048576, 2),
-      'fileCount' => count(array_filter($files, function ($file) {
-        return is_file($file) && strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'json';
-      }))
+      'fileCount' => $fileCount
     ]);
     break;
     

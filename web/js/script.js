@@ -1,38 +1,29 @@
-import { AppState, modelIdInput, sourceBtn, output } from './app-context.js';
-import './filters.js';
-import './settings-ui.js';
-import './image-cache.js';
-import './workflow.js';
-import './image-gallery.js';
-import './file-editing.js';
-import { loadCheckpoints, loadLoras, setmodelClickHandler } from './sidebar.js';
+import { setModelClickHandler, loadCheckpoints, loadLoras } from './sidebar.js';
+import { loadModelFromSidebar } from './model-loading.js';
+import { AppState, modelInput, sourceBtn, output } from './app-context.js';
 import { fetchData } from './model-actions.js';
-import { loadModelFromFile } from './model-loading.js';
 import { addModelToDatabase } from './db-sync.js';
 
 
-/** Main application script: initializes the app, sets up event handlers, and loads initial data
- * This script is responsible for:
- * - Setting up the click handler for files in the sidebar to load models when clicked
- * - Handling the "Enter" key on the model ID input to trigger data fetching
- * - Handling the "Source" button click to open the model URL in a new tab
- * - Handling the "Add to Database" button click to add the current model to the database
- * - Loading initial data for sidebar libraries (checkpoints and Loras)
- */
+/** Initialize application by setting up event handlers and loading initial data */
 async function initializeApp() {
-	setmodelClickHandler( loadModelFromFile );
 
-	if( modelIdInput ) {
-		modelIdInput.addEventListener( 'keydown', ( e ) => {
+	// Set click handler for files in sidebar to load models
+	setModelClickHandler( loadModelFromSidebar );
+
+	// Set event listener for [modelInput] field on [Enter]
+	if( modelInput ) {
+		modelInput.addEventListener( 'keydown', ( e ) => {
 			if( e.key === 'Enter' ) {
 				fetchData();
 			}
 		} );
 	}
 
-	if( sourceBtn && modelIdInput ) {
+	// Set event listener for [Source] button
+	if( sourceBtn && modelInput ) {
 		sourceBtn.addEventListener( 'click', () => {
-			const sourceUrl = buildSourceUrl( modelIdInput.value );
+			const sourceUrl = buildSourceUrl( modelInput.value );
 			if( !sourceUrl ) {
 				alert( 'Please enter a valid Civitai model ID or URL.' );
 				return;
@@ -41,17 +32,18 @@ async function initializeApp() {
 		} );
 	}
 
+	// Set event listener for [Add to Database] button
 	const addToDbBtn = document.getElementById( 'addToDbBtn' );
 	if( addToDbBtn ) {
 		addToDbBtn.addEventListener( 'click', () => {
 			if( AppState.model.currentModelIdForDb && AppState.model.currentSelectedVersion ) {
 				addModelToDatabase( AppState.model.currentModelIdForDb, AppState.model.currentSelectedVersion );
 			} else {
-				console.error( 'No model data stored for Add to Database' );
+				console.error( 'No model data stored for [Add to Database]' );
 			}
 		} );
 	} else {
-		console.error( 'Add to Database button not found during initialization' );
+		console.error( '[Add to Database] button not found during initialization' );
 	}
 
   // Load initial data for sidebar libraries
@@ -69,19 +61,30 @@ function buildSourceUrl( rawInput ) {
 		return null;
 	}
 
-	let modelId = null;
-	let modelVersionId = null;
+	let modelId					= null;
+	let modelVersionId	= null;
 
-	// Accept both plain IDs and full civitai model URLs.
-	const idMatch = value.match( /(?:https?:\/\/civitai\.com\/models\/)?(\d+)(?:\?modelVersionId=(\d+))?/i );
-	if( idMatch ) {
-		modelId = idMatch[1] || null;
-		modelVersionId = idMatch[2] || null;
+	// Support shorthand inputs like:
+	// - 847101
+	// - 847101?modelVersionId=1605769
+	// - 847101/fluxed-up-flux-nsfw-checkpoint?modelVersionId=1605769
+	const shorthandMatch = value.match( /^(\d+)(?:\/[^?\s]*)?(?:\?(.*))?$/ );
+	if( shorthandMatch ) {
+		modelId					= shorthandMatch[1] || null;
+		const rawQuery	= shorthandMatch[2] || '';
+		if( rawQuery ) {
+			const params		= new URLSearchParams( rawQuery );
+			modelVersionId	= params.get( 'modelVersionId' ) || null;
+		}
 	}
 
+	// If not a shorthand input, try to parse as a full URL
 	if( !modelId ) {
 		try {
-			const parsed = new URL( value );
+			const parsed = value.startsWith( 'http://' ) || value.startsWith( 'https://' )
+				? new URL( value )
+				: new URL( `https://civitai.com/models/${value.replace( /^\/+/, '' )}` );
+
 			const pathMatch = parsed.pathname.match( /\/models\/(\d+)/i );
 			if( pathMatch ) {
 				modelId = pathMatch[1];
@@ -100,6 +103,7 @@ function buildSourceUrl( rawInput ) {
 	return `https://civitai.com/models/${encodeURIComponent( modelId )}${versionQuery}`;
 }
 
+// Add error handling for initialization
 initializeApp().catch( error => {
 	console.error( 'App initialization failed:', error );
 	if( output ) {

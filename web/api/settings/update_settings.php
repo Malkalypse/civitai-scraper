@@ -4,9 +4,10 @@
  * Allowed fields: name, cfg, steps, clip_skip, positive, negative
  */
 
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = api_read_json_input();
 $versionId = isset($input['versionId']) ? (int)$input['versionId'] : 0;
 $setId = isset($input['setId']) ? (int)$input['setId'] : 1;
 $field = isset($input['field']) ? trim((string)$input['field']) : '';
@@ -14,43 +15,28 @@ $value = $input['value'] ?? null;
 
 $allowedFields = ['name', 'cfg', 'steps', 'clip_skip', 'positive', 'negative'];
 if ($versionId <= 0) {
-  http_response_code(400);
-  echo json_encode(['success' => false, 'error' => 'Missing or invalid versionId']);
-  exit;
+  api_send_failure('Missing or invalid versionId', 400);
 }
 
 if ($setId <= 0) {
-  http_response_code(400);
-  echo json_encode(['success' => false, 'error' => 'Missing or invalid setId']);
-  exit;
+  api_send_failure('Missing or invalid setId', 400);
 }
 
 if (!in_array($field, $allowedFields, true)) {
-  http_response_code(400);
-  echo json_encode(['success' => false, 'error' => 'Invalid field']);
-  exit;
+  api_send_failure('Invalid field', 400);
 }
 
-$servername = 'localhost';
-$username = 'root';
-$password = '';
-$dbname = 'civitai_models';
-
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = api_db_connect();
 if ($conn->connect_error) {
-  http_response_code(500);
-  echo json_encode(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
-  exit;
+  api_send_failure('Database connection failed: ' . $conn->connect_error, 500);
 }
 
 $conn->set_charset('utf8mb4');
 
 $existsStmt = $conn->prepare('SELECT version_id FROM models WHERE version_id = ? LIMIT 1');
 if (!$existsStmt) {
-  http_response_code(500);
-  echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
   $conn->close();
-  exit;
+  api_send_failure('Prepare failed: ' . $conn->error, 500);
 }
 
 $existsStmt->bind_param('i', $versionId);
@@ -60,10 +46,8 @@ $existsRow = $existsResult ? $existsResult->fetch_assoc() : null;
 $existsStmt->close();
 
 if (!$existsRow) {
-  http_response_code(404);
-  echo json_encode(['success' => false, 'error' => 'Version not found in models table']);
   $conn->close();
-  exit;
+  api_send_failure('Version not found in models table', 404);
 }
 
 if ($field === 'cfg') {
@@ -75,10 +59,8 @@ if ($field === 'cfg') {
     $cfgMax = null;
   } else {
     if (!is_numeric($cfgMinInput) || !is_numeric($cfgMaxInput)) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'cfgMin/cfgMax must be numeric']);
       $conn->close();
-      exit;
+      api_send_failure('cfgMin/cfgMax must be numeric', 400);
     }
 
     $parsedMin = (float)$cfgMinInput;
@@ -90,10 +72,8 @@ if ($field === 'cfg') {
     $cfgMax = $highest;
 
     if ($cfgMin < 0 || $cfgMin > 100 || $cfgMax < 0 || $cfgMax > 100) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'cfg values must be between 0 and 100']);
       $conn->close();
-      exit;
+      api_send_failure('cfg values must be between 0 and 100', 400);
     }
   }
 } elseif ($field === 'steps') {
@@ -105,20 +85,16 @@ if ($field === 'cfg') {
     $stepsMax = null;
   } else {
     if (!is_numeric($stepsMinInput) || !is_numeric($stepsMaxInput)) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'stepsMin/stepsMax must be numeric']);
       $conn->close();
-      exit;
+      api_send_failure('stepsMin/stepsMax must be numeric', 400);
     }
 
     $parsedMin = (float)$stepsMinInput;
     $parsedMax = (float)$stepsMaxInput;
 
     if (floor($parsedMin) != $parsedMin || floor($parsedMax) != $parsedMax) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'steps values must be integers']);
       $conn->close();
-      exit;
+      api_send_failure('steps values must be integers', 400);
     }
 
     $lowest = min((int)$parsedMin, (int)$parsedMax);
@@ -128,28 +104,22 @@ if ($field === 'cfg') {
     $stepsMax = $highest;
 
     if ($stepsMin < 1 || $stepsMin > 10000 || $stepsMax < 1 || $stepsMax > 10000) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'steps values must be between 1 and 10000']);
       $conn->close();
-      exit;
+      api_send_failure('steps values must be between 1 and 10000', 400);
     }
   }
 } elseif ($field === 'clip_skip') {
   $normalized = null;
   if ($value !== null && trim((string)$value) !== '') {
     if (!is_numeric($value)) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'clip_skip must be numeric']);
       $conn->close();
-      exit;
+      api_send_failure('clip_skip must be numeric', 400);
     }
 
     $clipSkip = (int)$value;
     if ($clipSkip < 0 || $clipSkip > 11) {
-      http_response_code(400);
-      echo json_encode(['success' => false, 'error' => 'clip_skip must be between 0 and 11']);
       $conn->close();
-      exit;
+      api_send_failure('clip_skip must be between 0 and 11', 400);
     }
 
     $normalized = $clipSkip;
@@ -162,10 +132,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, guidance_min, guidance_max) VALUES (?, ?, NULL, NULL) ON DUPLICATE KEY UPDATE guidance_min = VALUES(guidance_min), guidance_max = VALUES(guidance_max)";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('ii', $versionId, $setId);
@@ -173,10 +141,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, guidance_min, guidance_max) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE guidance_min = VALUES(guidance_min), guidance_max = VALUES(guidance_max)";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('iidd', $versionId, $setId, $cfgMin, $cfgMax);
@@ -184,10 +150,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, steps_min, steps_max) VALUES (?, ?, NULL, NULL) ON DUPLICATE KEY UPDATE steps_min = VALUES(steps_min), steps_max = VALUES(steps_max)";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('ii', $versionId, $setId);
@@ -195,10 +159,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, steps_min, steps_max) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE steps_min = VALUES(steps_min), steps_max = VALUES(steps_max)";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('iiii', $versionId, $setId, $stepsMin, $stepsMax);
@@ -206,10 +168,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, {$field}) VALUES (?, ?, NULL) ON DUPLICATE KEY UPDATE {$field} = VALUES({$field})";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('ii', $versionId, $setId);
@@ -217,10 +177,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, {$field}) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE {$field} = VALUES({$field})";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('iii', $versionId, $setId, $normalized);
@@ -228,10 +186,8 @@ if ($field === 'cfg' && $cfgMin === null && $cfgMax === null) {
   $upsertSql = "INSERT INTO settings (version_id, set_id, {$field}) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE {$field} = VALUES({$field})";
   $stmt = $conn->prepare($upsertSql);
   if (!$stmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
     $conn->close();
-    exit;
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
   }
 
   $stmt->bind_param('iis', $versionId, $setId, $normalized);
@@ -242,18 +198,14 @@ $error = $stmt->error;
 $stmt->close();
 
 if (!$ok) {
-  http_response_code(500);
-  echo json_encode(['success' => false, 'error' => 'Update failed: ' . $error]);
   $conn->close();
-  exit;
+  api_send_failure('Update failed: ' . $error, 500);
 }
 
 $selectStmt = $conn->prepare('SELECT name, guidance_min, guidance_max, steps_min, steps_max, clip_skip, positive, negative FROM settings WHERE version_id = ? AND set_id = ? LIMIT 1');
 if (!$selectStmt) {
-  http_response_code(500);
-  echo json_encode(['success' => false, 'error' => 'Verification query prepare failed: ' . $conn->error]);
   $conn->close();
-  exit;
+  api_send_failure('Verification query prepare failed: ' . $conn->error, 500);
 }
 
 $selectStmt->bind_param('ii', $versionId, $setId);
@@ -264,9 +216,7 @@ $selectStmt->close();
 $conn->close();
 
 if (!$row) {
-  http_response_code(500);
-  echo json_encode(['success' => false, 'error' => 'Failed to read saved settings']);
-  exit;
+  api_send_failure('Failed to read saved settings', 500);
 }
 
 echo json_encode([

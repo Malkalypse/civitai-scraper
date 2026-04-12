@@ -1,12 +1,12 @@
 import { AppState } from './app-context.js';
 import { loadLoras, loadCheckpoints } from './sidebar.js';
-import { normalizeSettingsSets } from './settings-ui.js';
+// import { normalizeSettingsSets } from './settings-ui.js';
 
 export async function fetchOriginalFilename( versionId ) {
 	console.log( `Fetching canonical download filename for version ${versionId}` );
 
 	try {
-		const response = await fetch( 'api/get_version_filename.php', {
+		const response = await fetch( 'api/models/get_version_filename.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { versionId } )
@@ -42,7 +42,7 @@ export async function syncTagsToDatabase( nextData, modelId ) {
 
 		console.log( `Syncing ${tagsOnModels.length} tags for model ${numericModelId} to database...` );
 
-		const response = await fetch( 'api/sync_tags.php', {
+		const response = await fetch( 'api/tags/sync_tags.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { tagsOnModels, modelId: numericModelId } )
@@ -85,7 +85,7 @@ export async function syncModelsToDatabase( nextData, modelId, filename, clicked
 
 		console.log( `Syncing version ${clickedVersionId} to database...` );
 
-		const response = await fetch( 'api/sync_models.php', {
+		const response = await fetch( 'api/models/sync_models.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { modelVersions: [targetVersion], filename, modelType } )
@@ -130,13 +130,13 @@ export async function addModelToDatabase( modelId, selectedVersion ) {
 
 	try {
 		const cacheBuster = new Date().getTime();
-		const response = await fetch( `api/fetch_data.php?_=${cacheBuster}`, {
+		const response = await fetch( `api/models/fetch_data.php?_=${cacheBuster}`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				'Cache-Control': 'no-cache'
 			},
-			body: JSON.stringify( { modelId } )
+			body: JSON.stringify( { modelInput: modelId } )
 		} );
 
 		const result = await response.json();
@@ -195,7 +195,7 @@ export async function checkModelInDatabase( modelId, selectedVersion ) {
 	}
 
 	try {
-		const response = await fetch( 'api/check_model_exists.php', {
+		const response = await fetch( 'api/models/check_model_exists.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { modelId: parseInt( modelId ), versionId: selectedVersion.id } )
@@ -217,12 +217,20 @@ export async function checkModelInDatabase( modelId, selectedVersion ) {
 
 		if( result.success && result.exists === true ) {
 			AppState.model.currentOriginalFilename = result.originalFilename ?? null;
+			// Settings/settingsTablesContainer tools are currently obsolete due Workflow Analysis tools.
+			// Keep old settings normalization logic commented for future restoration.
+			/*
 			AppState.settings.currentSettingsSets = normalizeSettingsSets( result.settingsSets, true );
 			AppState.settings.currentSamplerOptions = Array.isArray( result.samplerOptions ) ? result.samplerOptions : [];
 			AppState.settings.currentSchedulerOptions = Array.isArray( result.schedulerOptions ) ? result.schedulerOptions : [];
+			*/
+			AppState.settings.currentSettingsSets = [];
+			AppState.settings.currentSamplerOptions = [];
+			AppState.settings.currentSchedulerOptions = [];
 		} else {
 			AppState.model.currentOriginalFilename = null;
-			AppState.settings.currentSettingsSets = normalizeSettingsSets( [], true );
+			// AppState.settings.currentSettingsSets = normalizeSettingsSets( [], true );
+			AppState.settings.currentSettingsSets = [];
 			AppState.settings.currentSamplerOptions = [];
 			AppState.settings.currentSchedulerOptions = [];
 		}

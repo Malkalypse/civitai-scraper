@@ -4,9 +4,10 @@
  * Supports setting "workflow" to null or a present marker/id value.
  */
 
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = api_read_json_input();
 $imageId = isset($input['imageId']) ? (int)$input['imageId'] : 0;
 $modelId = isset($input['modelId']) ? (string)$input['modelId'] : '';
 $modelVersionId = isset($input['modelVersionId']) ? (string)$input['modelVersionId'] : '';
@@ -35,7 +36,7 @@ function registerVersionWorkflowRecord(string $modelVersionId, string $workflowI
     return ['attempted' => false, 'stored' => false, 'reason' => 'missing-required-values'];
   }
 
-  $db = new mysqli('localhost', 'root', '', 'civitai_models');
+  $db = api_db_connect();
   if ($db->connect_error) {
     return ['attempted' => true, 'stored' => false, 'reason' => 'db-connect-failed'];
   }
@@ -83,12 +84,11 @@ function registerVersionWorkflowRecord(string $modelVersionId, string $workflowI
 }
 
 if ($imageId <= 0) {
-  echo json_encode(['success' => false, 'error' => 'Missing or invalid imageId']);
-  exit;
+  api_send_failure('Missing or invalid imageId');
 }
 
 try {
-  $cacheDir = __DIR__ . '/../cache/image_generation';
+  $cacheDir = __DIR__ . '/../../cache/image_generation';
   if (!is_dir($cacheDir)) {
     @mkdir($cacheDir, 0755, true);
   }
@@ -163,8 +163,5 @@ try {
     'workflowRegistry' => $workflowRegistry
   ]);
 } catch (Exception $e) {
-  echo json_encode([
-    'success' => false,
-    'error' => 'Exception: ' . $e->getMessage()
-  ]);
+  api_send_failure('Exception: ' . $e->getMessage(), 500);
 }

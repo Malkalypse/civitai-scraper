@@ -179,7 +179,6 @@ try {
   ]);
   
   $apiResponse = curl_exec($apiCh);
-  curl_close($apiCh);
   
   if ($apiResponse) {
     $apiData = json_decode($apiResponse, true);
@@ -227,107 +226,141 @@ try {
     }
   }
   
-  // Fetch gallery images from tRPC endpoint
-  $input = [
-    'json' => [
-      'period' => 'AllTime',
-      'periodMode' => 'published',
-      'sort' => 'Newest',
-      'withMeta' => false,
-      'modelVersionId' => (int)$versionId,
-      'modelId' => (int)$modelId,
-      'hidden' => false,
-      'limit' => 100,
-      'browsingLevel' => 31,
-      'cursor' => null,
-      'authed' => true
-    ],
-    'meta' => [
-      'values' => [
-        'cursor' => ['undefined']
+  // Fetch gallery images from tRPC endpoint (paginate through all cursors)
+  $cursor = null;
+  $maxPages = 50;
+  $pagesFetched = 0;
+  $seenGalleryKeys = [];
+  $hasMoreGalleryPages = false;
+
+  while ($pagesFetched < $maxPages) {
+    $input = [
+      'json' => [
+        'period' => 'AllTime',
+        'periodMode' => 'published',
+        'sort' => 'Newest',
+        'withMeta' => false,
+        'modelVersionId' => (int)$versionId,
+        'modelId' => (int)$modelId,
+        'hidden' => false,
+        'limit' => 100,
+        'browsingLevel' => 31,
+        'cursor' => $cursor,
+        'authed' => true
+      ],
+      'meta' => [
+        'values' => [
+          'cursor' => $cursor === null ? ['undefined'] : [$cursor]
+        ]
       ]
-    ]
-  ];
-  
-  $inputJson = json_encode($input);
-  $galleryApiUrl = 'https://civitai.com/api/trpc/image.getImagesAsPostsInfinite?input=' . urlencode($inputJson);
-  
-  $galleryCh = curl_init();
-  curl_setopt_array($galleryCh, [
-    CURLOPT_URL => $galleryApiUrl,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 30,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    CURLOPT_HTTPHEADER => [
-      'Accept: */*',
-      'Content-Type: application/json',
-    ]
-  ]);
-  
-  $galleryResponse = curl_exec($galleryCh);
-  curl_close($galleryCh);
-  
-  if ($galleryResponse) {
+    ];
+
+    $inputJson = json_encode($input);
+    $galleryApiUrl = 'https://civitai.com/api/trpc/image.getImagesAsPostsInfinite?input=' . urlencode($inputJson);
+
+    $galleryCh = curl_init();
+    curl_setopt_array($galleryCh, [
+      CURLOPT_URL => $galleryApiUrl,
+      CURLOPT_RETURNTRANSFER => true,
+      CURLOPT_TIMEOUT => 30,
+      CURLOPT_SSL_VERIFYPEER => false,
+      CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+      CURLOPT_HTTPHEADER => [
+        'Accept: */*',
+        'Content-Type: application/json',
+      ]
+    ]);
+
+    $galleryResponse = curl_exec($galleryCh);
+
+    if (!$galleryResponse) {
+      break;
+    }
+
     $galleryData = json_decode($galleryResponse, true);
-    
-    // tRPC response structure: result.data.json.items
-    if ($galleryData && isset($galleryData['result']['data']['json']['items']) && is_array($galleryData['result']['data']['json']['items'])) {
-      $items = $galleryData['result']['data']['json']['items'];
-      
-      foreach ($items as $item) {
-        // Each item is a post that contains an array of images
-        if (isset($item['images']) && is_array($item['images'])) {
-          foreach ($item['images'] as $img) {
-            if (isset($img['url'])) {
-              $thumbTransform = buildCivitaiThumbnailTransform($img, 450);
-              $rawUrl = $img['url'];
-              $url = $rawUrl;
-              
-              // Build proper Civitai image URL
-              if (strpos($url, 'http') !== 0) {
-                // URL is just the UUID, construct full URL with optimized thumbnail params
-                $url = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $url . '/' . $thumbTransform;
-              }
+    if (!is_array($galleryData) || !isset($galleryData['result']['data']['json']) || !is_array($galleryData['result']['data']['json'])) {
+      break;
+    }
 
-              $url = toCivitaiThumbnailUrl($url, $thumbTransform);
+    $galleryJson = $galleryData['result']['data']['json'];
+    $items = isset($galleryJson['items']) && is_array($galleryJson['items']) ? $galleryJson['items'] : [];
 
-              $originalUrl = $rawUrl;
-              if (strpos($originalUrl, 'http') !== 0) {
-                $originalUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $originalUrl . '/original=true';
-              }
-              $originalUrl = toCivitaiOriginalUrl($originalUrl);
-
-              $imageData = [
-                'url' => $url,
-                'originalUrl' => $originalUrl
-              ];
-
-              $resolvedLinkUrl = resolveCivitaiImagePageUrl($img);
-              if ($resolvedLinkUrl !== null) {
-                $imageData['linkUrl'] = $resolvedLinkUrl;
-              }
-              
-              if (isset($img['type']) && $img['type'] === 'video') {
-                $imageData['type'] = 'video';
-              }
-              
-              if (isset($img['metadata'])) {
-                $imageData['metadata'] = $img['metadata'];
-              }
-              
-              $galleryImages[] = $imageData;
-            }
+    foreach ($items as $item) {
+      // Each item is a post that contains an array of images
+      if (isset($item['images']) && is_array($item['images'])) {
+        foreach ($item['images'] as $img) {
+          if (!isset($img['url'])) {
+            continue;
           }
+
+          $thumbTransform = buildCivitaiThumbnailTransform($img, 450);
+          $rawUrl = $img['url'];
+          $url = $rawUrl;
+
+          // Build proper Civitai image URL
+          if (strpos($url, 'http') !== 0) {
+            // URL is just the UUID, construct full URL with optimized thumbnail params
+            $url = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $url . '/' . $thumbTransform;
+          }
+
+          $url = toCivitaiThumbnailUrl($url, $thumbTransform);
+
+          $originalUrl = $rawUrl;
+          if (strpos($originalUrl, 'http') !== 0) {
+            $originalUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $originalUrl . '/original=true';
+          }
+          $originalUrl = toCivitaiOriginalUrl($originalUrl);
+
+          $resolvedLinkUrl = resolveCivitaiImagePageUrl($img);
+          $dedupeKey = is_string($resolvedLinkUrl) && $resolvedLinkUrl !== ''
+            ? $resolvedLinkUrl
+            : (is_string($originalUrl) ? $originalUrl : $url);
+
+          if (isset($seenGalleryKeys[$dedupeKey])) {
+            continue;
+          }
+          $seenGalleryKeys[$dedupeKey] = true;
+
+          $imageData = [
+            'url' => $url,
+            'originalUrl' => $originalUrl
+          ];
+
+          if ($resolvedLinkUrl !== null) {
+            $imageData['linkUrl'] = $resolvedLinkUrl;
+          }
+
+          if (isset($img['type']) && $img['type'] === 'video') {
+            $imageData['type'] = 'video';
+          }
+
+          if (isset($img['metadata'])) {
+            $imageData['metadata'] = $img['metadata'];
+          }
+
+          $galleryImages[] = $imageData;
         }
       }
     }
+
+    $pagesFetched++;
+
+    $nextCursor = $galleryJson['nextCursor'] ?? null;
+    if ($nextCursor === null || $nextCursor === '' || $nextCursor === $cursor) {
+      $hasMoreGalleryPages = false;
+      break;
+    }
+
+    $hasMoreGalleryPages = true;
+    $cursor = $nextCursor;
   }
   
   echo json_encode([
     'success' => true,
     'carouselImages' => $carouselImages,
-    'galleryImages' => $galleryImages
+    'galleryImages' => $galleryImages,
+    'galleryPagesFetched' => $pagesFetched,
+    'galleryHasMorePages' => $hasMoreGalleryPages
   ]);
   
 } catch (Exception $e) {

@@ -7,44 +7,32 @@
  * - setId (optional, positive integer). If omitted, next available set_id is used.
  */
 
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-$input = json_decode(file_get_contents('php://input'), true);
+$input = api_read_json_input();
 $versionId = isset($input['versionId']) ? (int)$input['versionId'] : 0;
 $setIdInput = isset($input['setId']) ? (int)$input['setId'] : null;
 
 if ($versionId <= 0) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'Missing or invalid versionId']);
-    exit;
+    api_send_failure('Missing or invalid versionId', 400);
 }
 
 if ($setIdInput !== null && $setIdInput <= 0) {
-    http_response_code(400);
-    echo json_encode(['success' => false, 'error' => 'setId must be a positive integer']);
-    exit;
+    api_send_failure('setId must be a positive integer', 400);
 }
 
-$servername = 'localhost';
-$username = 'root';
-$password = '';
-$dbname = 'civitai_models';
-
-$conn = new mysqli($servername, $username, $password, $dbname);
+$conn = api_db_connect();
 if ($conn->connect_error) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
-    exit;
+    api_send_failure('Database connection failed: ' . $conn->connect_error, 500);
 }
 
 $conn->set_charset('utf8mb4');
 
 $existsStmt = $conn->prepare('SELECT version_id FROM models WHERE version_id = ? LIMIT 1');
 if (!$existsStmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
     $conn->close();
-    exit;
 }
 
 $existsStmt->bind_param('i', $versionId);
@@ -54,10 +42,8 @@ $existsRow = $existsResult ? $existsResult->fetch_assoc() : null;
 $existsStmt->close();
 
 if (!$existsRow) {
-    http_response_code(404);
-    echo json_encode(['success' => false, 'error' => 'Version not found in models table']);
+    api_send_failure('Version not found in models table', 404);
     $conn->close();
-    exit;
 }
 
 $resolveNextSetId = function() use ($conn, $versionId) {
@@ -83,20 +69,16 @@ $setId = $setIdInput;
 if ($setId === null) {
     $setId = $resolveNextSetId();
     if ($setId === null || $setId <= 0) {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Failed to determine next set_id']);
+        api_send_failure('Failed to determine next set_id', 500);
         $conn->close();
-        exit;
     }
 }
 
 $insertSql = 'INSERT INTO settings (version_id, set_id) VALUES (?, ?)';
 $insertStmt = $conn->prepare($insertSql);
 if (!$insertStmt) {
-    http_response_code(500);
-    echo json_encode(['success' => false, 'error' => 'Prepare failed: ' . $conn->error]);
+    api_send_failure('Prepare failed: ' . $conn->error, 500);
     $conn->close();
-    exit;
 }
 
 $insertStmt->bind_param('ii', $versionId, $setId);
@@ -107,14 +89,11 @@ $insertStmt->close();
 
 if (!$insertOk) {
     if ($insertErrorNo === 1062) {
-        http_response_code(409);
-        echo json_encode(['success' => false, 'error' => 'set_id already exists for this version']);
+        api_send_failure('set_id already exists for this version', 409);
     } else {
-        http_response_code(500);
-        echo json_encode(['success' => false, 'error' => 'Insert failed: ' . $insertError]);
+        api_send_failure('Insert failed: ' . $insertError, 500);
     }
     $conn->close();
-    exit;
 }
 
 $conn->close();

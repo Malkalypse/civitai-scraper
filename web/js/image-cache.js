@@ -3,7 +3,7 @@ import { applyWorkflowIdentityToCard, applyImageCardFilters } from './filters.js
 
 export async function checkCached( remoteUrl, cacheLookupUrl = null ) {
 	try {
-		const response = await fetch( 'api/cache_image.php', {
+		const response = await fetch( 'api/images/cache_image.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { imageUrl: remoteUrl, lookupUrl: cacheLookupUrl || remoteUrl, download: false, modelId: AppState.model.currentModelId, versionId: AppState.model.currentVersionId } )
@@ -22,7 +22,7 @@ export async function checkCached( remoteUrl, cacheLookupUrl = null ) {
 
 export async function downloadAndCache( remoteUrl, cacheLookupUrl = null ) {
 	try {
-		const response = await fetch( 'api/cache_image.php', {
+		const response = await fetch( 'api/images/cache_image.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( { imageUrl: remoteUrl, lookupUrl: cacheLookupUrl || remoteUrl, download: true, modelId: AppState.model.currentModelId, versionId: AppState.model.currentVersionId } )
@@ -96,7 +96,7 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 				requestBody.imageFilename = String( imageFilename ).trim();
 			}
 
-			const response = await fetch( 'api/get_image_generation_data.php', {
+			const response = await fetch( 'api/images/get_image_generation_data.php', {
 				method: 'POST',
 				headers: { 'Content-Type': 'application/json' },
 				body: JSON.stringify( requestBody )
@@ -381,7 +381,7 @@ export async function toggleImageFavorite( checkbox ) {
 	updateImageCardState( checkbox, { favoriteLoaded: true, favorite } );
 
 	try {
-		const response = await fetch( 'api/update_image_favorite.php', {
+		const response = await fetch( 'api/images/update_image_favorite.php', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( {

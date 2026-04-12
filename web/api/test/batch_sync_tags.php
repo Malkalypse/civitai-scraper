@@ -7,9 +7,10 @@
 
 set_time_limit(0); // No time limit for this operation
 header('Content-Type: application/json');
+require_once __DIR__ . '/../../prefs.php';
 
 // Path to loras folder
-$lorasPath = 'D:/AI/models/loras';
+$lorasPath = web_model_path( 'lora' );
 
 if (!is_dir($lorasPath)) {
   echo json_encode(['error' => 'Loras directory not found']);
@@ -101,7 +102,6 @@ if ($action === 'sync') {
     
     $html = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    curl_close($ch);
     
     if ($httpCode !== 200 || !$html) {
       $results['failed']++;

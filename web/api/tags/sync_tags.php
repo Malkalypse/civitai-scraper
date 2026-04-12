@@ -5,10 +5,10 @@
  * Extracts tags from __NEXT_DATA__ and syncs them to the database
  */
 
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+api_set_json_header();
 
-// Get POST data
-$input = json_decode(file_get_contents('php://input'), true);
+$input = api_read_json_input();
 $tagsOnModels = $input['tagsOnModels'] ?? null;
 $modelId = $input['modelId'] ?? null;
 
@@ -22,8 +22,7 @@ if (!$modelId || !is_numeric($modelId)) {
   exit;
 }
 
-// Database connection
-$db = new mysqli('localhost', 'root', '', 'civitai_models');
+$db = api_db_connect();
 
 if ($db->connect_error) {
   echo json_encode(['error' => 'Database connection failed: ' . $db->connect_error]);

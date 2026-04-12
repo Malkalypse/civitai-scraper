@@ -48,6 +48,6 @@ export const AppState = {
 
 export const COPY_ALL_MAX_CONCURRENCY = AppConfig.copyAllMaxConcurrency;
 
-export const modelIdInput = document.getElementById( 'modelId' );
-export const sourceBtn        = document.getElementById( 'sourceBtn' );
-export const output       = document.getElementById( 'output' );
+export const modelInput	= document.getElementById( 'modelInput' );
+export const sourceBtn  = document.getElementById( 'sourceBtn' );
+export const output     = document.getElementById( 'output' );

@@ -13,7 +13,7 @@ ob_start();
 
 // Log errors to a file instead of outputting them
 ini_set('log_errors', '1');
-ini_set('error_log', __DIR__ . '/cache/error.log');
+ini_set('error_log', __DIR__ . '/../../cache/error.log');
 ini_set('display_errors', '0');
 error_reporting(E_ALL);
 
@@ -94,7 +94,7 @@ function resolveCachedImageFromMetadata($imageId, $cacheDir) {
   }
 
   $imageId = (int)$imageId;
-  $metadataPath = __DIR__ . '/../cache/image_generation/' . $imageId . '.json';
+  $metadataPath = __DIR__ . '/../../cache/image_generation/' . $imageId . '.json';
   if (!is_file($metadataPath)) {
     return null;
   }
@@ -137,7 +137,7 @@ function upsertImageGenerationMetadata($imageId, $payload) {
   }
 
   $imageId = (int)$imageId;
-  $generationDir = __DIR__ . '/../cache/image_generation';
+  $generationDir = __DIR__ . '/../../cache/image_generation';
   if (!is_dir($generationDir)) {
     @mkdir($generationDir, 0755, true);
   }
@@ -176,7 +176,7 @@ if (!$imageId && is_string($lookupUrl) && $lookupUrl !== '') {
 }
 
 // Create cache directories if they don't exist
-$cacheDir = __DIR__ . '/../cache/images';
+$cacheDir = __DIR__ . '/../../cache/images';
 if (!file_exists($cacheDir)) {
   mkdir($cacheDir, 0755, true);
 }
@@ -314,7 +314,6 @@ curl_setopt_array($ch, [
 
 $imageData = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-curl_close($ch);
 
 if ($imageData && $httpCode === 200) {
   $saved = optimizeWithPythonFromBytes($imageData, $cachedFilePath, $extension, 450, 75);

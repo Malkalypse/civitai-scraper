@@ -9,6 +9,7 @@ header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
 header('Access-Control-Allow-Methods: POST, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+require_once __DIR__ . '/../../web/prefs.php';
 
 // Handle preflight requests
 if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
@@ -29,11 +30,9 @@ if (!$fileName) {
     exit;
 }
 
-// Path to checkpoints folder
-$checkpointsPath = 'D:/AI/models/checkpoints';
-
-// Path to loras folder
-$lorasPath = 'D:/AI/models/loras';
+// Path to model folders
+$checkpointsPath = web_model_path( 'checkpoint' );
+$lorasPath = web_model_path( 'lora' );
 
 // Search for the file in all subdirectories
 $found = false;
