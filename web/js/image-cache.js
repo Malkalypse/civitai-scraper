@@ -72,11 +72,11 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 	const { modelId = null, modelVersionId = null, imageFilename = '' } = options;
 
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
-		return { promptText: '', paramsText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowId: '', workflowRevision: '' };
+		return { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '' };
 	}
 
 	if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
-		return AppState.runtime.copyAllTextCache.get( imageId ) || { promptText: '', paramsText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowId: '', workflowRevision: '' };
+		return AppState.runtime.copyAllTextCache.get( imageId ) || { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '' };
 	}
 
 	if( AppState.runtime.copyAllTextPending.has( imageId ) ) {
@@ -109,19 +109,17 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 
 			const payload = {
 				promptText: typeof result.promptText === 'string' ? result.promptText : '',
-				paramsText: typeof result.paramsText === 'string' ? result.paramsText : '',
 				copyAllText: typeof result.copyAllText === 'string' ? result.copyAllText : '',
 				favorite: result.favorite === true,
 				workflowPresent: result.workflowPresent === true,
 				workflowNull: result.workflowNull === true,
-				workflowId: typeof result.workflowId === 'string' ? result.workflowId : '',
-				workflowRevision: typeof result.workflowRevision === 'string' ? result.workflowRevision : ''
+				workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : ''
 			};
 			AppState.runtime.copyAllTextCache.set( imageId, payload );
 			return payload;
 		} catch( error ) {
 			console.warn( `Could not fetch generation data for image ${imageId}:`, error );
-			const emptyPayload = { promptText: '', paramsText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowId: '', workflowRevision: '' };
+			const emptyPayload = { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '' };
 			return emptyPayload;
 		} finally {
 			AppState.runtime.copyAllTextPending.delete( imageId );
@@ -132,14 +130,13 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 	return requestPromise;
 }
 
-export function queueCopyAllPreviewHydration( paramsTextarea, promptTextarea, favoriteCheckbox, imagePageUrl, imageLoadToken, metadata = {} ) {
-	if( !paramsTextarea || !promptTextarea ) {
+export function queueCopyAllPreviewHydration( promptTextarea, favoriteCheckbox, imagePageUrl, imageLoadToken, metadata = {} ) {
+	if( !promptTextarea ) {
 		return;
 	}
 
 	const imageId = extractImageIdFromUrl( imagePageUrl );
 	if( !imageId ) {
-		paramsTextarea.value = 'Parameters unavailable';
 		promptTextarea.value = 'Prompt unavailable';
 		if( favoriteCheckbox ) {
 			favoriteCheckbox.checked = false;
@@ -147,11 +144,9 @@ export function queueCopyAllPreviewHydration( paramsTextarea, promptTextarea, fa
 		return;
 	}
 
-	paramsTextarea.value = 'Loading parameters...';
 	promptTextarea.value = 'Loading prompt...';
-	autosizeCopyAllPreview( paramsTextarea );
 	autosizeCopyAllPreview( promptTextarea );
-	AppState.runtime.copyAllTextQueue.push( { paramsTextarea, promptTextarea, favoriteCheckbox, imageId, imageLoadToken, metadata } );
+	AppState.runtime.copyAllTextQueue.push( { promptTextarea, favoriteCheckbox, imageId, imageLoadToken, metadata } );
 	processCopyAllPreviewQueue();
 }
 
@@ -216,7 +211,7 @@ export function syncCopyAllPreviewWidth( card ) {
 export function processCopyAllPreviewQueue() {
 	while( AppState.runtime.copyAllActiveCount < COPY_ALL_MAX_CONCURRENCY && AppState.runtime.copyAllTextQueue.length > 0 ) {
 		const job = AppState.runtime.copyAllTextQueue.shift();
-		if( !job || !job.paramsTextarea || !job.promptTextarea ) {
+		if( !job || !job.promptTextarea ) {
 			continue;
 		}
 
@@ -234,25 +229,22 @@ export function processCopyAllPreviewQueue() {
 					return;
 				}
 
-				if( !document.body.contains( job.paramsTextarea ) || !document.body.contains( job.promptTextarea ) ) {
+				if( !document.body.contains( job.promptTextarea ) ) {
 					return;
 				}
 
-				const paramsText = typeof payload?.paramsText === 'string' ? payload.paramsText.trim() : '';
 				const promptText = typeof payload?.promptText === 'string' ? payload.promptText.trim() : '';
 				const favorite = payload?.favorite === true;
 				const workflowPresent = payload?.workflowPresent === true;
 				const workflowNull = payload?.workflowNull === true;
-				const workflowId = typeof payload?.workflowId === 'string' ? payload.workflowId : '';
-				const workflowRevision = typeof payload?.workflowRevision === 'string' ? payload.workflowRevision : '';
+				const workflowHash = typeof payload?.workflowHash === 'string' ? payload.workflowHash : '';
 
-				job.paramsTextarea.value = paramsText !== '' ? paramsText : 'Parameters unavailable';
 				job.promptTextarea.value = promptText !== '' ? promptText : 'Prompt unavailable';
 				if( job.favoriteCheckbox ) {
 					job.favoriteCheckbox.checked = favorite;
 					job.favoriteCheckbox.dataset.workflowPresent = workflowPresent ? '1' : '0';
 					job.favoriteCheckbox.dataset.workflowNull = workflowNull ? '1' : '0';
-					applyWorkflowIdentityToCard( job.favoriteCheckbox, workflowId, workflowRevision );
+					applyWorkflowIdentityToCard( job.favoriteCheckbox, workflowHash );
 					updateImageCardState( job.favoriteCheckbox, {
 						favoriteLoaded: true,
 						favorite,
@@ -263,7 +255,6 @@ export function processCopyAllPreviewQueue() {
 					setFavoriteImageBorder( job.favoriteCheckbox, favorite );
 				}
 
-				autosizeCopyAllPreview( job.paramsTextarea );
 				autosizeCopyAllPreview( job.promptTextarea );
 			} finally {
 				AppState.runtime.copyAllActiveCount--;

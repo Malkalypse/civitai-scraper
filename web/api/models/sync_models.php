@@ -255,7 +255,7 @@ function fetchVersionFilenameFromApi($versionId) {
 		return $cache[$versionId];
 	}
 
-	$url = "https://civitai.com/api/v1/model-versions/{$versionId}";
+	$url = "https://civitai.red/api/v1/model-versions/{$versionId}";
 	$ch = curl_init();
 	curl_setopt_array($ch, [
 		CURLOPT_URL => $url,

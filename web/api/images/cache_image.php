@@ -36,7 +36,7 @@ if (!$imageUrl) {
  * Normalize Civitai CDN URLs to a 450px optimized variant.
  */
 function toCivitaiThumbnailUrl($url, $transform = 'anim=false,width=450,optimized=true') {
-  if (!is_string($url) || stripos($url, 'image.civitai.com') === false) {
+  if (!is_string($url) || (stripos($url, 'image.civitai.red') === false && stripos($url, 'image.civitai.com') === false)) {
     return $url;
   }
 
@@ -60,7 +60,7 @@ function toCivitaiThumbnailUrl($url, $transform = 'anim=false,width=450,optimize
   if (preg_match('~^https?://image\.civitai\.com/[^/]+/([^/]+)(?:/(.*))?$~i', $url, $matches)) {
     $token = $matches[1];
     $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
-    $newUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/' . $transform;
+    $newUrl = 'https://image.civitai.red/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/' . $transform;
     if ($tail !== '' && stripos($tail, 'original=true') !== 0) {
       $newUrl .= '/' . $tail;
     }
@@ -198,7 +198,7 @@ if ($imageId) {
 }
 
 // Generate a filename from the URL (use the UUID from Civitai URLs)
-// Example: https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e183d27c-d640-4dfa-8e03-e12637d50367/original=true
+// Example: https://image.civitai.red/xG1nkqKTMzGDvpLrqFT7WA/e183d27c-d640-4dfa-8e03-e12637d50367/original=true
 preg_match('/\/([a-f0-9\-]{36})\//i', $imageUrl, $matches);
 if (!$matches) {
   // If no UUID found, hash the URL

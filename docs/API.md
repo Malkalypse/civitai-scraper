@@ -119,12 +119,3 @@ Input:
 
 Behavior:
 - updates Favorite field in per-image JSON metadata
-
-### POST update_settings.php
-Updates settings set values for a version.
-
-### POST create_settings_set.php
-Creates a new settings row set_id for a version.
-
-### POST update_version_tools.php
-Updates sampler/scheduler assignments for a version + set.

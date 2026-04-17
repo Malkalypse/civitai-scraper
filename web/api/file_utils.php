@@ -53,7 +53,7 @@ function stripExtension( string $name ): string {
 	return substr( $name, 0, -strlen( $extension ) );
 }
 
-/** Recursively search for a file by name under a directory
+/** Recursively search for a file by name within a directory
  * @param string $rootPath        Root directory of search
  * @param string $targetFilename  Filename to find
  * @return string|null Full path of the found file or null if not found
@@ -62,7 +62,7 @@ function findFileRecursively( string $rootPath, string $targetFilename ): ?strin
 	return findEntryRecursively( $rootPath, $targetFilename, false );
 }
 
-/** Recursively search for a directory by name under a directory tree
+/** Recursively search for a directory by name within a directory
  * @param string $rootPath            Root directory of search
  * @param string $targetDirectoryName Directory name to find
  * @return string|null Full path of the found directory or null if not found

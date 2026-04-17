@@ -98,7 +98,7 @@ function resolveModelPathContext( array $renameRequest ): array {
 
 	$pathPrefs	= loadModelPathPrefs();
 	$modelType	= fetchModelType( $renameRequest['modelId'], $renameRequest['versionId'] );
-	$typeFolder	= resolveTypeFolder( $modelType, $renameRequest['originalFilename'], $pathPrefs );
+	$typeFolder	= resolveTypeFolder( $modelType, $renameRequest['extension'], $pathPrefs );
 
 	$modelBasePath = is_string( $typeFolder ) && $typeFolder !== ''
 		? $pathPrefs['modelsRootPath'] . '/' . $typeFolder
@@ -185,13 +185,13 @@ function fetchModelType( ?int $modelId, ?int $versionId ): ?string {
 
 /** Resolve the preferred storage subdirectory for a model type
  * @param string|null	$modelType				Model type string from database
- * @param string|null	$originalFilename	Original filename from input for gguf special case
+ * @param string|null	$extension	Resolved normalized extension for gguf special case
  * @param array				$pathPrefs				Loaded path preferences for directory resolution
  * @return string|null Resolved subdirectory name or null to use root models directory
 */
 function resolveTypeFolder(
 	?string $modelType,
-	?string $originalFilename,
+	?string $extension,
 	array		$pathPrefs
 ): ?string {
 
@@ -225,7 +225,7 @@ function resolveTypeFolder(
 
 	}
 
-	if( $normalizedType === 'checkpoint' && getExtension( $originalFilename ) === '.gguf' ) {
+	if( $normalizedType === 'checkpoint' && strtolower( ( string )$extension ) === '.gguf' ) {
 		$typeFolder = $pathPrefs['unetDir'];
 	}
 

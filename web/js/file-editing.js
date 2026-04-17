@@ -1,6 +1,43 @@
 import { AppState } from './app-context.js';
 import { loadLoras, loadCheckpoints } from './sidebar.js';
 
+function getFilenameExtension( name ) {
+	if( typeof name !== 'string' ) {
+		return '';
+	}
+
+	const trimmed = name.trim();
+	const lastDot = trimmed.lastIndexOf( '.' );
+	if( lastDot <= 0 || lastDot === trimmed.length - 1 ) {
+		return '';
+	}
+
+	return trimmed.substring( lastDot ).toLowerCase();
+}
+
+function stripKnownExtension( name, originalFilename = '' ) {
+	if( typeof name !== 'string' ) {
+		return '';
+	}
+
+	let normalized = name.trim();
+	if( normalized === '' ) {
+		return '';
+	}
+
+	const originalExt = getFilenameExtension( originalFilename );
+	if( originalExt && normalized.toLowerCase().endsWith( originalExt ) ) {
+		return normalized.slice( 0, -originalExt.length );
+	}
+
+	// Backward-compatibility fallback for older rows where original filename may be missing.
+	if( normalized.toLowerCase().endsWith( '.safetensors' ) ) {
+		return normalized.slice( 0, -12 );
+	}
+
+	return normalized;
+}
+
 /** Handle keydown events for editable filename element 
  * @param {KeyboardEvent}	event
  * @param {HTMLElement}		element Contenteditable element for filename
@@ -19,17 +56,9 @@ export async function handleFilenameKeydown( event, element ) {
  */
 export async function saveFilename( element, options = {} ) {
 	const	allowMissingFile	= options.allowMissingFile === true;
-	let		newFilename				= element.textContent.trim();
-	let		currentFilename		= element.getAttribute( 'data-original' );
 	const originalFilename	= element.getAttribute( 'data-original-filename' ) || '';
-
-	// Remove .safetensors extension for comparison
-	if( newFilename.endsWith( '.safetensors' ) ) {
-		newFilename = newFilename.substring( 0, newFilename.length - 12 );
-	}
-	if( currentFilename.endsWith( '.safetensors' ) ) {
-		currentFilename = currentFilename.substring( 0, currentFilename.length - 12 );
-	}
+	let		newFilename				= stripKnownExtension( element.textContent, originalFilename );
+	let		currentFilename		= stripKnownExtension( element.getAttribute( 'data-original' ) || '', originalFilename );
 
 	// If filename hasn't changed, do nothing
 	if( newFilename === currentFilename ) {
@@ -172,25 +201,25 @@ export async function saveOriginalFilename( element ) {
 	}
 }
 
+/** Reset filename to original */
 export async function resetFilename() {
+
+	// Get filename element and original filename from AppState
 	const filenameElement = document.querySelector( '.editable-filename' );
 	if( !filenameElement ) {
 		alert( 'Filename element not found' );
 		return;
 	}
-
 	const originalFilename = filenameElement.getAttribute( 'data-original-filename' );
 	if( !originalFilename ) {
 		alert( 'Original filename not available' );
 		return;
 	}
 
-	let resetFilenameValue = originalFilename;
-	if( resetFilenameValue.endsWith( '.safetensors' ) ) {
-		resetFilenameValue = resetFilenameValue.substring( 0, resetFilenameValue.length - 12 );
-	}
+	//
+	let resetFilenameValue = stripKnownExtension( originalFilename, originalFilename );
 
-	const currentName = filenameElement.textContent.trim();
+	const currentName = stripKnownExtension( filenameElement.textContent, originalFilename );
 
 	if( currentName === resetFilenameValue ) {
 		alert( 'Filename is already set to the original' );

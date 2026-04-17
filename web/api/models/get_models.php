@@ -75,6 +75,7 @@ try {
 	$params					= [];
 	$paramTypes			= '';
 	$typeFolderPath	= null;
+	$typeFolderPaths = [];
 
 	// Define valid types and their corresponding folder paths
 	if( $type !== '' ) {
@@ -84,11 +85,18 @@ try {
 		$typeAliases = [
 			'LORA' => [
 				'dbType' => 'LORA',
-				'folderPath' => web_model_path( 'lora' )
+				'folderPath' => web_model_path( 'lora' ),
+				'folderPaths' => [
+					'lora' => web_model_path( 'lora' )
+				]
 			],
 			'CHECKPOINT' => [
 				'dbType' => 'CHECKPOINT',
-				'folderPath' => web_model_path( 'checkpoint' )
+				'folderPath' => web_model_path( 'checkpoint' ),
+				'folderPaths' => [
+					'checkpoint' => web_model_path( 'checkpoint' ),
+					'unet' => web_model_path( 'unet' )
+				]
 			]
 		];
 
@@ -102,6 +110,7 @@ try {
 		// Get database type and folder path for provided type
 		$dbType					= $typeAliases[$normalizedType]['dbType'];
 		$typeFolderPath	= $typeAliases[$normalizedType]['folderPath'];
+		$typeFolderPaths = $typeAliases[$normalizedType]['folderPaths'] ?? [];
 
 		// Construct WHERE clause and parameters for query
 		$whereSql				= 'WHERE UPPER(type) = ?';
@@ -110,12 +119,19 @@ try {
 	}
 
 	// Collect existing file names in target folder for existence checking
-	$existingFileNames = $typeFolderPath
-		? collectExistingFileNames( $typeFolderPath )
-		: [];
+	$existingFileNamesByPath = [];
+	if( !empty( $typeFolderPaths ) ) {
+		foreach( $typeFolderPaths as $key => $path ) {
+			$existingFileNamesByPath[$key] = collectExistingFileNames( $path );
+		}
+	} else {
+		$existingFileNamesByPath['default'] = $typeFolderPath
+			? collectExistingFileNames( $typeFolderPath )
+			: [];
+	}
 
 	// Prepare and execute query to fetch models based on type filter
-	$query = "SELECT model_id, version_id, base_model, filename
+	$query = "SELECT model_id, version_id, base_model, filename, original_filename
 						FROM models
 						{$whereSql}
 						ORDER BY filename";
@@ -147,17 +163,38 @@ try {
 	while( $row = $result->fetch_assoc() ) {
 		$folderName = $row['base_model'] ?: 'Unknown';
 		$rawFileName = (string)$row['filename'];
+		$originalFileName = isset( $row['original_filename'] ) ? (string)$row['original_filename'] : '';
 		$fileName = pathinfo($rawFileName, PATHINFO_FILENAME);
 
 		$exists = true;
 		if( $typeFolderPath ) {
+			$rawFileExt = strtolower( pathinfo( $rawFileName, PATHINFO_EXTENSION ) );
+			$originalFileExt = strtolower( pathinfo( $originalFileName, PATHINFO_EXTENSION ) );
+			$effectiveExt = $rawFileExt !== '' ? $rawFileExt : $originalFileExt;
+			$lookupBucket = 'checkpoint';
+			if( strtoupper( $type ) === 'LORA' ) {
+				$lookupBucket = 'lora';
+			} elseif( strtoupper( $type ) === 'CHECKPOINT' && $effectiveExt === 'gguf' ) {
+				$lookupBucket = 'unet';
+			}
+
+			$existingFileNames = $existingFileNamesByPath[$lookupBucket]
+				?? $existingFileNamesByPath['default']
+				?? [];
+
 			$candidateKeys = [
 				strtolower($rawFileName),
 				strtolower(pathinfo($rawFileName, PATHINFO_FILENAME)),
 				strtolower($fileName),
+				strtolower($fileName . '.gguf'),
 				strtolower($fileName . '.safetensors'),
 				strtolower($fileName . '.zip')
 			];
+
+			if( $originalFileName !== '' ) {
+				$candidateKeys[] = strtolower( $originalFileName );
+				$candidateKeys[] = strtolower( pathinfo( $originalFileName, PATHINFO_FILENAME ) );
+			}
 
 			$exists = false;
 			foreach ($candidateKeys as $key) {

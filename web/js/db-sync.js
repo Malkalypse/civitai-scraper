@@ -1,6 +1,5 @@
 import { AppState } from './app-context.js';
 import { loadLoras, loadCheckpoints } from './sidebar.js';
-// import { normalizeSettingsSets } from './settings-ui.js';
 
 export async function fetchOriginalFilename( versionId ) {
 	console.log( `Fetching canonical download filename for version ${versionId}` );
@@ -217,22 +216,8 @@ export async function checkModelInDatabase( modelId, selectedVersion ) {
 
 		if( result.success && result.exists === true ) {
 			AppState.model.currentOriginalFilename = result.originalFilename ?? null;
-			// Settings/settingsTablesContainer tools are currently obsolete due Workflow Analysis tools.
-			// Keep old settings normalization logic commented for future restoration.
-			/*
-			AppState.settings.currentSettingsSets = normalizeSettingsSets( result.settingsSets, true );
-			AppState.settings.currentSamplerOptions = Array.isArray( result.samplerOptions ) ? result.samplerOptions : [];
-			AppState.settings.currentSchedulerOptions = Array.isArray( result.schedulerOptions ) ? result.schedulerOptions : [];
-			*/
-			AppState.settings.currentSettingsSets = [];
-			AppState.settings.currentSamplerOptions = [];
-			AppState.settings.currentSchedulerOptions = [];
 		} else {
 			AppState.model.currentOriginalFilename = null;
-			// AppState.settings.currentSettingsSets = normalizeSettingsSets( [], true );
-			AppState.settings.currentSettingsSets = [];
-			AppState.settings.currentSamplerOptions = [];
-			AppState.settings.currentSchedulerOptions = [];
 		}
 
 		if( result.success && result.exists === false ) {

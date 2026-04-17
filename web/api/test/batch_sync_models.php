@@ -142,7 +142,7 @@ if ($action === 'sync_single') {
 	
 	try {
 		// Fetch model data from Civitai API (much faster than HTML scraping)
-		$url = "https://civitai.com/api/v1/models/{$modelId}";
+		$url = "https://civitai.red/api/v1/models/{$modelId}";
 		
 		$ch = curl_init($url);
 		curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -278,7 +278,7 @@ if ($action === 'sync') {
 	foreach ($modelIds as $modelId) {
 		try {
 			// Fetch __NEXT_DATA__ from Civitai
-			$url = "https://civitai.com/models/{$modelId}";
+			$url = "https://civitai.red/models/{$modelId}";
 			
 			$ch = curl_init($url);
 			curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);

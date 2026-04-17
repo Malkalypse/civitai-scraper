@@ -1,8 +1,7 @@
 import { AppState } from '../app-context.js';
 import { escapeHtml } from '../dom-utils.js';
-// import { buildSettingsTablesHtml } from '../settings-ui.js';
 
-/** Build HTML for model tags, applying "active" class to tags that are currently active in settings
+/** Build HTML for model tags, applying "active" class to tags that are currently active in filters
  * @param {*} modelTags Array of tag strings to build HTML for
  * @returns {string} HTML string representing the model tags
  */
@@ -11,7 +10,7 @@ export function buildModelTagsHtml( modelTags ) {
 
 	modelTags.forEach( tag => {
 
-		const activeClass = AppState.settings.activeTags.has( tag )
+		const activeClass = AppState.filters.activeTags.has( tag )
 			? ' active'
 			: '';
 
@@ -69,8 +68,13 @@ export function buildFetchDataHtml( {
 	return html;
 }
 
-
-
+/** Build HTML for version links
+ * @param {Array} modelVersions Array of model version objects
+ * @param {number} selectedVersionId ID of the currently selected version
+ * @returns {string} HTML string representing the version links
+ * 
+ * fetchData() > renderVersionLinks() > buildVersionLinksHtml()
+ */
 export function buildVersionLinksHtml( modelVersions, selectedVersionId ) {
 	let versionLinksHtml = '';
 
@@ -85,25 +89,27 @@ export function buildVersionLinksHtml( modelVersions, selectedVersionId ) {
 	return versionLinksHtml;
 }
 
-export function buildVersionInfoHtml( { result, version, modelType, safetensorsFile, trainedWords } ) {
-	// Settings/settingsTablesContainer is currently obsolete due Workflow Analysis tools.
-	// Keep the old markup commented for quick restoration later.
-	const settingsSectionHtml = '';
-	/*
-	const settingsSectionHtml = `
-		<div style="display: flex; align-items: center; justify-content: space-between; margin-top: 10px;">
-			<strong>Settings</strong>
-		</div>
-		<div id="settingsTablesContainer">${buildSettingsTablesHtml( AppState.settings.currentSettingsSets, true )}</div>
-		${AppState.model.currentModelExistsInDb ? '<div style="display: flex; justify-content: flex-end; margin-top: 10px;"><button id="addSettingsSetBtn" data-action="add-settings-set" style="padding: 4px 10px; font-size: 12px;">Add set</button></div>' : ''}
-	`;
-	*/
-
+/** Build HTML for version information
+ * @param {Object} params Parameters for building version info HTML
+ * @param {Object} params.result Result object containing model and version data
+ * @param {Object} params.version Currently selected version object
+ * @param {string} params.modelType Type of model
+ * @param {string} params.safetensorsFile Original filename from Civitai (if available)
+ * @param {string} params.trainedWords Comma-separated trigger words (if available)
+ * @returns {string} HTML string representing the version information
+ */
+export function buildVersionInfoHtml( {
+	result,
+	version,
+	modelType,
+	safetensorsFile,
+	trainedWords
+} ) {
 	return `
 		<div class="info success">
 			<div style="display: flex; align-items: center; gap: 10px; margin-bottom: 10px;">
 				<div class="editable-filename" contenteditable="true" data-original="${escapeHtml( AppState.model.currentFilename || '' )}" data-original-filename="${escapeHtml( safetensorsFile || '' )}" style="flex: 1;">${escapeHtml( AppState.model.currentFilename || 'Unknown' )}</div>
-				<button class="reset-filename-btn" data-action="reset-filename" style="padding: 8px 16px; background: #f39c12; border: none; border-radius: 4px; color: white; cursor: pointer; font-weight: bold; white-space: nowrap;">Reset</button>
+				<button class="reset-filename-btn" data-action="reset-filename" style="padding: 8px 16px; border: none; border-radius: 4px; color: white; cursor: pointer; font-weight: bold; white-space: nowrap;">Reset</button>
 			</div>
 			${result.versionSelectionMethod ? `<div class="matched"><em>${escapeHtml( result.versionSelectionMethod )}</em></div>` : ''}
 
@@ -150,11 +156,14 @@ export function buildVersionInfoHtml( { result, version, modelType, safetensorsF
 					<td class="filename" style="color: #8fd19e;">${escapeHtml( safetensorsFile )}</td>
 				</tr>` : '' )}
 			</table>
-			${settingsSectionHtml}
 		</div>
 	`;
 }
 
+/** Build HTML for TRPC description
+ * @param {string} trpcDescription TRPC description text
+ * @returns {string} HTML string representing the TRPC description
+ */
 export function buildTrpcDescriptionHtml( trpcDescription ) {
 	if( !trpcDescription ) {
 		return '';
@@ -167,6 +176,10 @@ export function buildTrpcDescriptionHtml( trpcDescription ) {
 	`;
 }
 
+/** Build HTML for version selection warning
+ * @param {string} versionSelectionMethod Version selection method text
+ * @returns {string} HTML string representing the version selection warning
+ */
 export function buildVersionSelectionWarningHtml( versionSelectionMethod ) {
 	if( !versionSelectionMethod ) {
 		return '';
@@ -180,6 +193,9 @@ export function buildVersionSelectionWarningHtml( versionSelectionMethod ) {
 	`;
 }
 
+/** Build HTML for cache info section
+ * @returns {string} HTML string representing the cache info section
+ */
 export function buildCacheInfoSectionHtml() {
 	return `
 		<div class="info" style="background: #1e1e2e; border: 1px solid #333;">
@@ -190,6 +206,9 @@ export function buildCacheInfoSectionHtml() {
 	`;
 }
 
+/** Build HTML for thumbnail controls section
+ * @returns {string} HTML string representing the thumbnail controls section
+ */
 export function buildThumbnailControlsSectionHtml() {
 	return `
 		<div class="info" style="background: #1e1e2e; border: 1px solid #333; padding: 10px 15px;">
@@ -205,16 +224,25 @@ export function buildThumbnailControlsSectionHtml() {
 	`;
 }
 
+/** Build HTML for images section
+ * @returns {string} HTML string representing the images section
+ */
 export function buildImagesSectionHtml() {
 	return `
 		<div class="info">
 			<div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
-				<button type="button" id="generationToggleParamsBtn" data-toggle-type="params" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Params</button>
 				<button type="button" id="generationTogglePromptsBtn" data-toggle-type="prompts" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Prompts</button>
 				<button type="button" id="generationToggleNonWorkflowBtn" data-toggle-type="non-workflow" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Non-Workflow</button>
 				<button type="button" id="generationToggleNonFavoritesBtn" data-toggle-type="non-favorites" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Non-Favorites</button>
 			</div>
 			<div id="workflowFilterSection" style="margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px;">
+				<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">
+					<button type="button" id="scanWorkflowsBtn" data-action="scan-workflows" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Scan Workflows</button>
+					<label for="scanWorkflowsRescan" style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #cfd8dc; cursor: pointer;">
+						<input type="checkbox" id="scanWorkflowsRescan" style="margin: 0;">
+						rescan
+					</label>
+				</div>
 				<div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #cfd8dc;">
 					<strong>Workflow Filter</strong>
 					<span id="workflowFilterStatus" style="color: #8aa0ae;">(loading...)</span>
@@ -232,6 +260,9 @@ export function buildImagesSectionHtml() {
 	`;
 }
 
+/** Build HTML for workflow analysis section
+ * @returns {string} HTML string representing the workflow analysis section
+ */
 export function buildWorkflowAnalysisSectionHtml() {
 	return `
 		<div class="info" id="workflowAnalysisSection" style="display: none;">
@@ -241,10 +272,6 @@ export function buildWorkflowAnalysisSectionHtml() {
 				<button type="button" id="workflowToggleTextBtn" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Text</button>
 			</div>
 			<div id="workflowAnalysisNodeList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;"></div>
-			<div class="json-output" style="margin-top: 10px;">
-				<pre id="workflowAnalysisOutput"></pre>
-			</div>
 		</div>
 	`;
 }
-

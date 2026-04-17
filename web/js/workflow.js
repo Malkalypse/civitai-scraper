@@ -1,6 +1,15 @@
 import { AppState } from './app-context.js';
-import { applyWorkflowIdentityToCard, applyImageCardFilters } from './filters.js';
+import { applyWorkflowIdentityToCard, applyImageCardFilters, loadVersionWorkflowFilters } from './filters.js';
 import { extractFilenameFromUrl, updateImageCardState, setFavoriteImageBorder, applyImageCardBorder } from './image-cache.js';
+
+async function refreshWorkflowFilterOptionsForCurrentVersion() {
+	const versionId = Number( AppState.model.currentVersionId || 0 );
+	if( !Number.isInteger( versionId ) || versionId <= 0 ) {
+		return;
+	}
+
+	await loadVersionWorkflowFilters( versionId );
+}
 
 export async function markImageWorkflowAsNull( imageId, imageFilename = '' ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
@@ -12,6 +21,7 @@ export async function markImageWorkflowAsNull( imageId, imageFilename = '' ) {
 		headers: { 'Content-Type': 'application/json' },
 		body: JSON.stringify( {
 			imageId,
+			workflowState: 'missing',
 			workflow: null,
 			modelId: AppState.model.currentModelId,
 			modelVersionId: AppState.model.currentVersionId,
@@ -29,25 +39,33 @@ export async function markImageWorkflowAsNull( imageId, imageFilename = '' ) {
 		AppState.runtime.copyAllTextCache.set( imageId, {
 			...cached,
 			workflowPresent: false,
-			workflowNull: result.workflowNull === true
+			workflowNull: result.workflowNull === true,
+			workflowHash: ''
 		} );
+	}
+
+	try {
+		await refreshWorkflowFilterOptionsForCurrentVersion();
+	} catch( error ) {
+		console.warn( 'Could not refresh workflow filter options after workflow removal:', error );
 	}
 
 	return result.workflowNull === true;
 }
 
 
-export async function markImageWorkflowAsPresent( imageId, imageFilename = '', workflowId = null, workflowRevision = null ) {
+export async function markImageWorkflowAsPresent( imageId, imageFilename = '', workflowHash = '' ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
 		return false;
 	}
 
-	const workflowIdString = workflowId === null || workflowId === undefined
+	const workflowHashString = workflowHash === null || workflowHash === undefined
 		? ''
-		: String( workflowId ).trim();
-	const workflowRevisionString = workflowRevision === null || workflowRevision === undefined
-		? ''
-		: String( workflowRevision ).trim();
+		: String( workflowHash ).trim();
+
+	if( workflowHashString === '' ) {
+		throw new Error( 'Missing workflow hash' );
+	}
 
 	const response = await fetch( 'api/images/update_image_workflow.php', {
 		method: 'POST',
@@ -55,8 +73,7 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 		body: JSON.stringify( {
 			imageId,
 			workflowState: 'present',
-			workflow: workflowIdString !== '' ? workflowIdString : true,
-			...( workflowRevisionString !== '' ? { version: workflowRevisionString } : {} ),
+			workflow: workflowHashString,
 			modelId: AppState.model.currentModelId,
 			modelVersionId: AppState.model.currentVersionId,
 			imageFilename
@@ -73,8 +90,15 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 		AppState.runtime.copyAllTextCache.set( imageId, {
 			...cached,
 			workflowPresent: true,
-			workflowNull: false
+			workflowNull: false,
+			workflowHash: workflowHashString
 		} );
+	}
+
+	try {
+		await refreshWorkflowFilterOptionsForCurrentVersion();
+	} catch( error ) {
+		console.warn( 'Could not refresh workflow filter options after workflow update:', error );
 	}
 
 	return true;
@@ -99,6 +123,250 @@ export function shouldMarkWorkflowAsMissing( error ) {
 	return isMissingWorkflowError( error?.message );
 }
 
+async function fetchCachedWorkflowEntryState( imageId ) {
+	const response = await fetch( 'api/images/get_image_workflow_state.php', {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: JSON.stringify( { imageId } )
+	} );
+
+	const result = await response.json();
+	if( !response.ok || !result.success ) {
+		throw new Error( result.error || `HTTP ${response.status}` );
+	}
+
+	return {
+		hasWorkflowEntry: result.hasWorkflowEntry === true,
+		workflowNull: result.workflowNull === true,
+		workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : ''
+	};
+}
+
+function applyPresentWorkflowUi( referenceElement, favoriteCheckbox ) {
+	if( favoriteCheckbox ) {
+		favoriteCheckbox.dataset.workflowPresent = '1';
+		favoriteCheckbox.dataset.workflowNull = '0';
+		updateImageCardState( favoriteCheckbox, {
+			workflowLoaded: true,
+			workflowPresent: true,
+			workflowNull: false
+		} );
+		setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
+	} else {
+		applyImageCardBorder( referenceElement, false, true, false );
+		updateImageCardState( referenceElement, {
+			workflowLoaded: true,
+			workflowPresent: true,
+			workflowNull: false
+		} );
+	}
+
+	applyImageCardFilters();
+}
+
+function applyMissingWorkflowUi( referenceElement, favoriteCheckbox ) {
+	if( favoriteCheckbox ) {
+		favoriteCheckbox.dataset.workflowPresent = '0';
+		favoriteCheckbox.dataset.workflowNull = '1';
+		updateImageCardState( favoriteCheckbox, {
+			workflowLoaded: true,
+			workflowPresent: false,
+			workflowNull: true
+		} );
+		setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
+	} else {
+		applyImageCardBorder( referenceElement, false, false, true );
+		updateImageCardState( referenceElement, {
+			workflowLoaded: true,
+			workflowPresent: false,
+			workflowNull: true
+		} );
+	}
+}
+
+async function extractAndPersistWorkflowForElement( referenceElement, { renderAnalysis = false } = {} ) {
+	const imageId = Number( referenceElement?.dataset?.imageId || 0 );
+	const imagePageUrl = referenceElement?.dataset?.imagePageUrl || '';
+	const fullImageUrl = referenceElement?.dataset?.fullImageUrl || '';
+	const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
+	const card = referenceElement?.closest( '.image-card' ) || null;
+	const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
+
+	const result = await fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl );
+	const analysisData = buildWorkflowAnalysisData( result.workflowJson );
+	const workflowHash = await computeWorkflowShapeHashFromAnalysisData( analysisData );
+
+	if( Number.isInteger( imageId ) && imageId > 0 ) {
+		applyWorkflowIdentityToCard( referenceElement, workflowHash );
+		await markImageWorkflowAsPresent( imageId, imageFilename, workflowHash );
+		applyWorkflowUiToAllCardsForImageId( imageId, true );
+	}
+
+	if( renderAnalysis ) {
+		const nodePortDefinitions = await fetchNodePortDefinitions( analysisData.nodes );
+		renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitions );
+
+		const workflowNodeList = document.getElementById( 'workflowAnalysisNodeList' );
+		if( workflowNodeList ) {
+			workflowNodeList.scrollIntoView( { behavior: 'smooth', block: 'start' } );
+		}
+	}
+
+	return {
+		imageId,
+		imageFilename,
+		workflowText: result.workflowText,
+		workflowHash
+	};
+}
+
+async function markWorkflowMissingForElement( referenceElement, imageFilename, error ) {
+	const imageId = Number( referenceElement?.dataset?.imageId || 0 );
+	const card = referenceElement?.closest( '.image-card' ) || null;
+	const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
+
+	if( Number.isInteger( imageId ) && imageId > 0 && shouldMarkWorkflowAsMissing( error ) ) {
+		try {
+			await markImageWorkflowAsNull( imageId, imageFilename );
+		} catch( markError ) {
+			console.warn( `Could not mark workflow state for image ${imageId}:`, markError );
+		}
+
+		applyWorkflowUiToAllCardsForImageId( imageId, false );
+	}
+}
+
+function applyWorkflowUiToAllCardsForImageId( imageId, workflowPresent ) {
+	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
+		return;
+	}
+
+	const allButtons = document.querySelectorAll(
+		`.workflow-copy-btn[data-image-id="${imageId}"], .workflow-analyze-btn[data-image-id="${imageId}"]`
+	);
+	const seenCards = new Set();
+
+	allButtons.forEach( btn => {
+		const card = btn.closest( '.image-card' );
+		if( !card || seenCards.has( card ) ) {
+			return;
+		}
+		seenCards.add( card );
+		const favoriteCheckbox = card.querySelector( '.favorite-checkbox' );
+		if( workflowPresent ) {
+			applyPresentWorkflowUi( btn, favoriteCheckbox );
+		} else {
+			applyMissingWorkflowUi( btn, favoriteCheckbox );
+		}
+	} );
+}
+
+function collectUniqueWorkflowButtons() {
+	const buttons = Array.from( document.querySelectorAll( '.workflow-analyze-btn, .workflow-copy-btn' ) );
+	const uniqueByImageId = new Map();
+
+	buttons.forEach( button => {
+		const imageId = Number( button?.dataset?.imageId || 0 );
+		if( !Number.isInteger( imageId ) || imageId <= 0 ) {
+			return;
+		}
+
+		if( !uniqueByImageId.has( imageId ) ) {
+			uniqueByImageId.set( imageId, button );
+		}
+	} );
+
+	return Array.from( uniqueByImageId.values() );
+}
+
+export async function scanMissingImageWorkflows( button, options = {} ) {
+	if( !button ) {
+		return;
+	}
+
+	const rescanAll = options?.rescanAll === true;
+
+	const originalText = button.textContent;
+	button.disabled = true;
+	button.textContent = rescanAll ? 'Rescanning...' : 'Scanning...';
+
+	const targets = collectUniqueWorkflowButtons();
+	let scanned = 0;
+	let processed = 0;
+	let skipped = 0;
+	let failures = 0;
+
+	for( const target of targets ) {
+		scanned += 1;
+		const imageId = Number( target?.dataset?.imageId || 0 );
+		const imagePageUrl = target?.dataset?.imagePageUrl || '';
+		const fullImageUrl = target?.dataset?.fullImageUrl || '';
+		const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
+
+		button.textContent = `Scanning ${scanned}/${targets.length}`;
+
+		try {
+			if( !rescanAll ) {
+				const state = await fetchCachedWorkflowEntryState( imageId );
+				if( state.hasWorkflowEntry ) {
+					skipped += 1;
+					continue;
+				}
+			}
+
+			await extractAndPersistWorkflowForElement( target, { renderAnalysis: false } );
+			processed += 1;
+		} catch( error ) {
+			if( shouldMarkWorkflowAsMissing( error ) ) {
+				await markWorkflowMissingForElement( target, imageFilename, error );
+				processed += 1;
+			} else {
+				failures += 1;
+				console.warn( `Workflow scan failed for image ${imageId}:`, error );
+			}
+		}
+	}
+
+	button.disabled = false;
+	button.textContent = originalText;
+	const modeLabel = rescanAll ? 'Workflow rescan complete.' : 'Workflow scan complete.';
+	alert( `${modeLabel} Scanned: ${scanned}, Updated: ${processed}, Skipped: ${skipped}, Errors: ${failures}` );
+}
+
+export async function retrySingleImageWorkflowScan( noWorkflowButton ) {
+	if( !noWorkflowButton ) {
+		return;
+	}
+
+	const card = noWorkflowButton.closest( '.image-card' );
+	if( !card ) {
+		return;
+	}
+
+	const workflowButton = card.querySelector( '.workflow-copy-btn' ) || card.querySelector( '.workflow-analyze-btn' );
+	if( !workflowButton ) {
+		return;
+	}
+
+	const imagePageUrl = workflowButton.dataset.imagePageUrl || '';
+	const fullImageUrl = workflowButton.dataset.fullImageUrl || '';
+	const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
+	const originalText = noWorkflowButton.textContent;
+
+	noWorkflowButton.disabled = true;
+	noWorkflowButton.textContent = 'Rescanning...';
+
+	try {
+		await extractAndPersistWorkflowForElement( workflowButton, { renderAnalysis: false } );
+	} catch( error ) {
+		console.warn( 'Single-image workflow rescan failed:', error );
+		await markWorkflowMissingForElement( workflowButton, imageFilename, error );
+	} finally {
+		noWorkflowButton.disabled = false;
+		noWorkflowButton.textContent = originalText;
+	}
+}
+
 
 export async function copyImageWorkflow( button ) {
 	if( !button ) {
@@ -108,9 +376,6 @@ export async function copyImageWorkflow( button ) {
 	const imageId = Number( button.dataset.imageId || 0 );
 	const imagePageUrl = button.dataset.imagePageUrl || '';
 	const fullImageUrl = button.dataset.fullImageUrl || '';
-	const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
-	const card = button.closest( '.image-card' );
-	const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 	const originalText = button.textContent;
 	let copiedSuccessfully = false;
 
@@ -118,74 +383,18 @@ export async function copyImageWorkflow( button ) {
 	button.textContent = 'Extracting...';
 
 	try {
-		const result = await fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl );
-		const workflowId = result?.workflowJson?.id ?? null;
-		const workflowRevision = result?.workflowJson?.revision ?? null;
-
-		if( Number.isInteger( imageId ) && imageId > 0 ) {
-			applyWorkflowIdentityToCard( button, workflowId, workflowRevision );
-			try {
-				await markImageWorkflowAsPresent( imageId, imageFilename, workflowId, workflowRevision );
-			} catch( error ) {
-				console.warn( `Could not mark workflow state for image ${imageId}:`, error );
-			}
-
-			if( favoriteCheckbox ) {
-				favoriteCheckbox.dataset.workflowPresent = '1';
-				favoriteCheckbox.dataset.workflowNull = '0';
-				updateImageCardState( favoriteCheckbox, {
-					workflowLoaded: true,
-					workflowPresent: true,
-					workflowNull: false
-				} );
-				setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
-			} else {
-				applyImageCardBorder( button, false, true, false );
-				updateImageCardState( button, {
-					workflowLoaded: true,
-					workflowPresent: true,
-					workflowNull: false
-				} );
-			}
-
-			applyImageCardFilters();
-		}
-
-		const copied = await copyTextWithFallback( result.workflowText );
+		const processed = await extractAndPersistWorkflowForElement( button, { renderAnalysis: false } );
+		const copied = await copyTextWithFallback( processed.workflowText );
 		if( copied ) {
 			copiedSuccessfully = true;
 		} else {
-			window.prompt( 'Clipboard was blocked. Press Ctrl+C (Cmd+C on Mac), then Enter:', result.workflowText );
+			window.prompt( 'Clipboard was blocked. Press Ctrl+C (Cmd+C on Mac), then Enter:', processed.workflowText );
 		}
 	} catch( error ) {
 		console.warn( 'Workflow extraction/copy failed:', error );
-
-		if( Number.isInteger( imageId ) && imageId > 0 && shouldMarkWorkflowAsMissing( error ) ) {
-			try {
-				await markImageWorkflowAsNull( imageId, imageFilename );
-			} catch( markError ) {
-				console.warn( `Could not mark workflow state for image ${imageId}:`, markError );
-			}
-
-			if( favoriteCheckbox ) {
-				favoriteCheckbox.dataset.workflowPresent = '0';
-				favoriteCheckbox.dataset.workflowNull = '1';
-				updateImageCardState( favoriteCheckbox, {
-					workflowLoaded: true,
-					workflowPresent: false,
-					workflowNull: true
-				} );
-				setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
-			} else {
-				applyImageCardBorder( button, false, false, true );
-				updateImageCardState( button, {
-					workflowLoaded: true,
-					workflowPresent: false,
-					workflowNull: true
-				} );
-			}
-		}
-
+		// Do not persist a missing-workflow state during copy action.
+		// Copy failures can be transient (network/CDN/clipboard) and should not
+		// flip an image from known-present to missing.
 	} finally {
 		button.disabled = false;
 		button.textContent = copiedSuccessfully ? 'Copied' : originalText;
@@ -336,6 +545,50 @@ export function buildWorkflowAnalysisData( workflowJson ) {
 	return { workflowId, workflowRevision, nodes, links };
 }
 
+function buildWorkflowShapeData( analysisDataForJson ) {
+	const shapeNodes = Array.isArray( analysisDataForJson?.nodes )
+		? analysisDataForJson.nodes.map( node => {
+			const { widgets_values: _ignoredWidgetsValues, ...nodeWithoutWidgets } = node || {};
+			return nodeWithoutWidgets;
+		} )
+		: [];
+
+	return {
+		...analysisDataForJson,
+		nodes: shapeNodes
+	};
+}
+
+export function buildWorkflowShapeTextFromAnalysisData( analysisData ) {
+	const { workflowId: _wfId, workflowRevision: _wfRev, ...analysisDataForJson } = analysisData || {};
+	const workflowShape = buildWorkflowShapeData( analysisDataForJson );
+	return JSON.stringify( workflowShape, null, 2 );
+}
+
+export async function computeWorkflowShapeHashFromAnalysisData( analysisData ) {
+	const workflowShapeText = buildWorkflowShapeTextFromAnalysisData( analysisData );
+	return computeTextHashHex( workflowShapeText );
+}
+
+async function computeTextHashHex( text ) {
+	if( window.crypto && window.crypto.subtle ) {
+		const encoded = new TextEncoder().encode( text || '' );
+		const digest = await window.crypto.subtle.digest( 'SHA-256', encoded );
+		return Array.from( new Uint8Array( digest ) )
+			.map( byte => byte.toString( 16 ).padStart( 2, '0' ) )
+			.join( '' );
+	}
+
+	let hash = 2166136261;
+	const value = String( text || '' );
+	for( let i = 0; i < value.length; i += 1 ) {
+		hash ^= value.charCodeAt( i );
+		hash += ( hash << 1 ) + ( hash << 4 ) + ( hash << 7 ) + ( hash << 8 ) + ( hash << 24 );
+	}
+
+	return ( hash >>> 0 ).toString( 16 ).padStart( 8, '0' );
+}
+
 
 export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitions = {} ) {
 	const section = document.getElementById( 'workflowAnalysisSection' );
@@ -343,9 +596,8 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 	const linksToggleBtn = document.getElementById( 'workflowToggleLinksBtn' );
 	const textToggleBtn = document.getElementById( 'workflowToggleTextBtn' );
 	const nodeList = document.getElementById( 'workflowAnalysisNodeList' );
-	const output = document.getElementById( 'workflowAnalysisOutput' );
 
-	if( !section || !title || !nodeList || !output ) {
+	if( !section || !title || !nodeList ) {
 		return;
 	}
 
@@ -934,12 +1186,6 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 	applyLinksVisibility();
 	applyTextVisibility();
 
-	const metaParts = [];
-	if( workflowId !== null ) metaParts.push( `id: ${workflowId}` );
-	if( workflowRevision !== null ) metaParts.push( `revision: ${workflowRevision}` );
-	const metaPrefix = metaParts.length > 0 ? metaParts.join( '   ' ) + '\n\n' : '';
-	const { workflowId: _wfId, workflowRevision: _wfRev, ...analysisDataForJson } = analysisData;
-	output.textContent = metaPrefix + JSON.stringify( analysisDataForJson, null, 2 );
 	section.style.display = 'block';
 	section.scrollIntoView( { behavior: 'smooth', block: 'start' } );
 }
@@ -953,86 +1199,17 @@ export async function analyzeImageWorkflow( button ) {
 	const imageId = Number( button.dataset.imageId || 0 );
 	const imagePageUrl = button.dataset.imagePageUrl || '';
 	const fullImageUrl = button.dataset.fullImageUrl || '';
-	const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
-	const card = button.closest( '.image-card' );
-	const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 	const originalText = button.textContent;
 
 	button.disabled = true;
 	button.textContent = 'Analyzing...';
 
 	try {
-		const result = await fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl );
-		const workflowId = result?.workflowJson?.id ?? null;
-		const workflowRevision = result?.workflowJson?.revision ?? null;
-
-		if( Number.isInteger( imageId ) && imageId > 0 ) {
-			applyWorkflowIdentityToCard( button, workflowId, workflowRevision );
-			try {
-				await markImageWorkflowAsPresent( imageId, imageFilename, workflowId, workflowRevision );
-			} catch( error ) {
-				console.warn( `Could not mark workflow state for image ${imageId}:`, error );
-			}
-
-			if( favoriteCheckbox ) {
-				favoriteCheckbox.dataset.workflowPresent = '1';
-				favoriteCheckbox.dataset.workflowNull = '0';
-				updateImageCardState( favoriteCheckbox, {
-					workflowLoaded: true,
-					workflowPresent: true,
-					workflowNull: false
-				} );
-				setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
-			} else {
-				applyImageCardBorder( button, false, true, false );
-				updateImageCardState( button, {
-					workflowLoaded: true,
-					workflowPresent: true,
-					workflowNull: false
-				} );
-			}
-
-			applyImageCardFilters();
-		}
-
-		const workflowJson = result.workflowJson;
-		const analysisData = buildWorkflowAnalysisData( workflowJson );
-		const nodePortDefinitions = await fetchNodePortDefinitions( analysisData.nodes );
-		renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitions );
-
-		const workflowNodeList = document.getElementById( 'workflowAnalysisNodeList' );
-		if( workflowNodeList ) {
-			workflowNodeList.scrollIntoView( { behavior: 'smooth', block: 'start' } );
-		}
+		await extractAndPersistWorkflowForElement( button, { renderAnalysis: true } );
 	} catch( error ) {
 		console.warn( 'Workflow analysis failed:', error );
-
-		if( Number.isInteger( imageId ) && imageId > 0 && shouldMarkWorkflowAsMissing( error ) ) {
-			try {
-				await markImageWorkflowAsNull( imageId, imageFilename );
-			} catch( markError ) {
-				console.warn( `Could not mark workflow state for image ${imageId}:`, markError );
-			}
-
-			if( favoriteCheckbox ) {
-				favoriteCheckbox.dataset.workflowPresent = '0';
-				favoriteCheckbox.dataset.workflowNull = '1';
-				updateImageCardState( favoriteCheckbox, {
-					workflowLoaded: true,
-					workflowPresent: false,
-					workflowNull: true
-				} );
-				setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
-			} else {
-				applyImageCardBorder( button, false, false, true );
-				updateImageCardState( button, {
-					workflowLoaded: true,
-					workflowPresent: false,
-					workflowNull: true
-				} );
-			}
-		}
-
+		// Keep persisted workflow state unchanged on analysis failure.
+		// Classification as missing is handled by dedicated scan actions.
 	} finally {
 		button.disabled = false;
 		button.textContent = originalText;

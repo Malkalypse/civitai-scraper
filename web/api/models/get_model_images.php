@@ -43,7 +43,7 @@ function buildCivitaiThumbnailTransform($image, $maxSide = 450) {
 }
 
 function toCivitaiThumbnailUrl($url, $transform) {
-  if (!is_string($url) || stripos($url, 'image.civitai.com') === false) {
+  if (!is_string($url) || (stripos($url, 'image.civitai.red') === false && stripos($url, 'image.civitai.com') === false)) {
     return $url;
   }
 
@@ -62,7 +62,7 @@ function toCivitaiThumbnailUrl($url, $transform) {
   if (preg_match('~^https?://image\.civitai\.com/[^/]+/([^/]+)(?:/(.*))?$~i', $url, $matches)) {
     $token = $matches[1];
     $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
-    $newUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/' . $transform;
+    $newUrl = 'https://image.civitai.red/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/' . $transform;
     if ($tail !== '' && stripos($tail, 'original=true') !== 0) {
       $newUrl .= '/' . $tail;
     }
@@ -73,7 +73,16 @@ function toCivitaiThumbnailUrl($url, $transform) {
 }
 
 function toCivitaiOriginalUrl($url) {
-  if (!is_string($url) || stripos($url, 'image.civitai.com') === false) {
+  if (stripos($url, 'image-b2.civitai.com/file/civitai-media-cache/') !== false) {
+    $normalizedB2 = preg_replace('~/original=true(?=[/?#]|$)~i', '/original', $url, 1, $replacedB2Count);
+    if ($replacedB2Count > 0 && is_string($normalizedB2)) {
+      return $normalizedB2;
+    }
+
+    return $url;
+  }
+
+  if (!is_string($url) || (stripos($url, 'image.civitai.red') === false && stripos($url, 'image.civitai.com') === false)) {
     return $url;
   }
 
@@ -98,7 +107,7 @@ function toCivitaiOriginalUrl($url) {
       $tail = ltrim((string)$tail, '/');
     }
 
-    $newUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/original=true';
+    $newUrl = 'https://image.civitai.red/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/original=true';
     if ($tail !== '') {
       $newUrl .= '/' . $tail;
     }
@@ -123,10 +132,10 @@ function resolveCivitaiImagePageUrl($image) {
     if (isset($image[$key]) && is_string($image[$key])) {
       $value = trim($image[$key]);
       if (preg_match('~^/images/(\d+)(?:[/?#].*)?$~i', $value, $matches)) {
-        return 'https://civitai.com/images/' . (int)$matches[1];
+        return 'https://civitai.red/images/' . (int)$matches[1];
       }
       if (preg_match('~^https?://(?:www\.)?civitai\.com/images/(\d+)(?:[/?#].*)?$~i', $value, $matches)) {
-        return 'https://civitai.com/images/' . (int)$matches[1];
+        return 'https://civitai.red/images/' . (int)$matches[1];
       }
     }
   }
@@ -134,17 +143,17 @@ function resolveCivitaiImagePageUrl($image) {
   $candidateKeys = ['id', 'imageId', 'image_id'];
   foreach ($candidateKeys as $key) {
     if (isset($image[$key]) && is_numeric($image[$key])) {
-      return 'https://civitai.com/images/' . (int)$image[$key];
+      return 'https://civitai.red/images/' . (int)$image[$key];
     }
   }
 
   if (isset($image['url']) && is_string($image['url'])) {
     if (preg_match('~civitai\.com/images/(\d+)~i', $image['url'], $matches)) {
-      return 'https://civitai.com/images/' . (int)$matches[1];
+      return 'https://civitai.red/images/' . (int)$matches[1];
     }
 
     if (preg_match('~image\.civitai\.com/.*/(\d+)\.(?:jpe?g|png|webp|gif|avif|mp4|webm)(?:[?#].*)?$~i', $image['url'], $matches)) {
-      return 'https://civitai.com/images/' . (int)$matches[1];
+      return 'https://civitai.red/images/' . (int)$matches[1];
     }
   }
 
@@ -154,11 +163,11 @@ function resolveCivitaiImagePageUrl($image) {
     }
 
     if (preg_match('~(?:^|https?://(?:www\.)?civitai\.com)?/images/(\d+)(?:[/?#].*)?$~i', trim($value), $matches)) {
-      return 'https://civitai.com/images/' . (int)$matches[1];
+      return 'https://civitai.red/images/' . (int)$matches[1];
     }
 
     if (preg_match('~image\.civitai\.com/.*/(\d+)\.(?:jpe?g|png|webp|gif|avif|mp4|webm)(?:[?#].*)?$~i', trim($value), $matches)) {
-      return 'https://civitai.com/images/' . (int)$matches[1];
+      return 'https://civitai.red/images/' . (int)$matches[1];
     }
   }
 
@@ -167,7 +176,7 @@ function resolveCivitaiImagePageUrl($image) {
 
 try {
   // Fetch carousel images from Civitai API
-  $apiUrl = "https://civitai.com/api/v1/models/{$modelId}";
+  $apiUrl = "https://civitai.red/api/v1/models/{$modelId}";
   
   $apiCh = curl_init();
   curl_setopt_array($apiCh, [
@@ -256,7 +265,7 @@ try {
     ];
 
     $inputJson = json_encode($input);
-    $galleryApiUrl = 'https://civitai.com/api/trpc/image.getImagesAsPostsInfinite?input=' . urlencode($inputJson);
+    $galleryApiUrl = 'https://civitai.red/api/trpc/image.getImagesAsPostsInfinite?input=' . urlencode($inputJson);
 
     $galleryCh = curl_init();
     curl_setopt_array($galleryCh, [
@@ -299,7 +308,7 @@ try {
 
           // Build proper Civitai image URL
           if (strpos($url, 'http') !== 0) {
-            // URL is just the UUID, construct full URL with optimized thumbnail params
+            // URL is just the UUID; use civitai.com CDN (account hash is valid there)
             $url = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $url . '/' . $thumbTransform;
           }
 
@@ -307,7 +316,7 @@ try {
 
           $originalUrl = $rawUrl;
           if (strpos($originalUrl, 'http') !== 0) {
-            $originalUrl = 'https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $originalUrl . '/original=true';
+            $originalUrl = 'https://image-b2.civitai.com/file/civitai-media-cache/' . $originalUrl . '/original';
           }
           $originalUrl = toCivitaiOriginalUrl($originalUrl);
 

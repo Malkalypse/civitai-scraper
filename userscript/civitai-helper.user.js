@@ -4,8 +4,8 @@
 // @version      0.3
 // @description  Helper script for Civitai scraper development
 // @author       You
-// @match        https://civitai.com/*
-// @icon         https://www.google.com/s2/favicons?sz=64&domain=civitai.com
+// @match        https://civitai.red/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=civitai.red
 // @grant        GM_download
 // @grant        GM.download
 // @grant        GM_addValueChangeListener

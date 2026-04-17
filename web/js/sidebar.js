@@ -192,22 +192,22 @@ export function toggleFolder( element ) {
 export function toggleTag( element ) {
   const tag = element.getAttribute( 'data-tag' );
 
-  if( AppState.settings.activeTags.has( tag ) ) {
-    AppState.settings.activeTags.delete( tag );
+  if( AppState.filters.activeTags.has( tag ) ) {
+    AppState.filters.activeTags.delete( tag );
     element.classList.remove( 'active' );
   } else {
-    AppState.settings.activeTags.add( tag );
+    AppState.filters.activeTags.add( tag );
     element.classList.add( 'active' );
   }
 
-  console.log( 'Active tags:', Array.from( AppState.settings.activeTags ) );
+  console.log( 'Active tags:', Array.from( AppState.filters.activeTags ) );
   updateSidebarHighlighting();
 }
 
 /** Update sidebar file highlighting based on currently active tags */
 export async function updateSidebarHighlighting() {
 
-  if( AppState.settings.activeTags.size === 0 ) {
+  if( AppState.filters.activeTags.size === 0 ) {
     document.querySelectorAll( '.file-item' ).forEach( item => {
       item.classList.remove( 'hidden' );
     } );
@@ -218,7 +218,7 @@ export async function updateSidebarHighlighting() {
     const response = await fetch( 'api/tags/get_model_tags.php', {
       method:   'POST',
       headers:  { 'Content-Type': 'application/json' },
-      body:     JSON.stringify( { tags: Array.from( AppState.settings.activeTags ) } )
+      body:     JSON.stringify( { tags: Array.from( AppState.filters.activeTags ) } )
     } );
 
     const result = await response.json();

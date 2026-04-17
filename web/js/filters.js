@@ -50,14 +50,9 @@ export function setupWorkflowAnalysisVisibilityObserver() {
 }
 
 export function updateGenerationPreviewToggleButtons() {
-	const paramsBtn = document.getElementById( 'generationToggleParamsBtn' );
 	const promptsBtn = document.getElementById( 'generationTogglePromptsBtn' );
 	const nonWorkflowBtn = document.getElementById( 'generationToggleNonWorkflowBtn' );
 	const nonFavoritesBtn = document.getElementById( 'generationToggleNonFavoritesBtn' );
-
-	if( paramsBtn ) {
-		paramsBtn.textContent = AppState.ui.generationParamsHidden ? 'Show Params' : 'Hide Params';
-	}
 
 	if( promptsBtn ) {
 		promptsBtn.textContent = AppState.ui.generationPromptsHidden ? 'Show Prompts' : 'Hide Prompts';
@@ -72,17 +67,12 @@ export function updateGenerationPreviewToggleButtons() {
 	}
 }
 
-export function buildWorkflowFilterKey( workflowId, workflowRevision ) {
-	const id = workflowId === null || workflowId === undefined ? '' : String( workflowId ).trim();
-	const revision = workflowRevision === null || workflowRevision === undefined ? '' : String( workflowRevision ).trim();
-	if( id === '' || revision === '' ) {
-		return '';
-	}
-
-	return `${id}::${revision}`;
+export function buildWorkflowFilterKey( workflowHash ) {
+	const hash = workflowHash === null || workflowHash === undefined ? '' : String( workflowHash ).trim();
+	return hash;
 }
 
-export function applyWorkflowIdentityToCard( referenceElement, workflowId = '', workflowRevision = '' ) {
+export function applyWorkflowIdentityToCard( referenceElement, workflowHash = '' ) {
 	if( !referenceElement ) {
 		return;
 	}
@@ -92,10 +82,8 @@ export function applyWorkflowIdentityToCard( referenceElement, workflowId = '', 
 		return;
 	}
 
-	const id = workflowId === null || workflowId === undefined ? '' : String( workflowId ).trim();
-	const revision = workflowRevision === null || workflowRevision === undefined ? '' : String( workflowRevision ).trim();
-	card.dataset.workflowId = id;
-	card.dataset.workflowRevision = revision;
+	const hash = workflowHash === null || workflowHash === undefined ? '' : String( workflowHash ).trim();
+	card.dataset.workflowHash = hash;
 }
 
 export function renderWorkflowFilterButtons() {
@@ -104,7 +92,7 @@ export function renderWorkflowFilterButtons() {
 		return;
 	}
 
-	const options = [ { key: 'all', workflowId: 'all', workflowRevision: '' }, ...AppState.workflow.workflowFilterOptions ];
+	const options = [ { key: 'all', workflowHash: 'all', imageCount: 0 }, ...AppState.workflow.workflowFilterOptions ];
 	container.innerHTML = '';
 
 	options.forEach( option => {
@@ -121,7 +109,9 @@ export function renderWorkflowFilterButtons() {
 		if( option.key === 'all' ) {
 			btn.textContent = 'All';
 		} else {
-			btn.textContent = `${option.workflowId} (v${option.workflowRevision})`;
+			const shortHash = option.workflowHash.length > 12 ? `${option.workflowHash.slice( 0, 12 )}...` : option.workflowHash;
+			btn.textContent = option.imageCount > 0 ? `${shortHash} (${option.imageCount})` : shortHash;
+			btn.title = option.workflowHash;
 		}
 
 		const isActive = option.key === AppState.workflow.activeWorkflowFilterKey;
@@ -177,17 +167,15 @@ export async function loadVersionWorkflowFilters( versionId ) {
 		AppState.workflow.workflowFilterOptions = Array.isArray( result.workflows )
 			? result.workflows
 				.map( row => {
-					const workflowId = row && row.workflowId !== undefined && row.workflowId !== null
-						? String( row.workflowId ).trim()
+					const workflowHash = row && row.workflowHash !== undefined && row.workflowHash !== null
+						? String( row.workflowHash ).trim()
 						: '';
-					const workflowRevision = row && row.workflowRevision !== undefined && row.workflowRevision !== null
-						? String( row.workflowRevision ).trim()
-						: '';
-					const key = buildWorkflowFilterKey( workflowId, workflowRevision );
+					const key = buildWorkflowFilterKey( workflowHash );
 					if( key === '' ) {
 						return null;
 					}
-					return { key, workflowId, workflowRevision };
+					const imageCount = Number( row?.imageCount || 0 );
+					return { key, workflowHash, imageCount: Number.isFinite( imageCount ) ? imageCount : 0 };
 				} )
 				.filter( Boolean )
 			: [];
@@ -213,7 +201,7 @@ export function applyImageCardFilters() {
 		const workflowLoaded = card.dataset.workflowLoaded === '1';
 		const favorite = card.dataset.favorite === '1';
 		const workflowNull = card.dataset.workflowNull === '1';
-		const cardWorkflowKey = buildWorkflowFilterKey( card.dataset.workflowId || '', card.dataset.workflowRevision || '' );
+		const cardWorkflowKey = buildWorkflowFilterKey( card.dataset.workflowHash || '' );
 
 		const hideForWorkflow = AppState.ui.hideNonWorkflowImages && workflowLoaded && workflowNull;
 		const hideForFavorite = AppState.ui.hideNonFavoriteImages && favoriteLoaded && !favorite;
@@ -231,10 +219,6 @@ export function applyImageCardFilters() {
 }
 
 export function applyGenerationPreviewVisibility() {
-	document.querySelectorAll( '.generation-params-preview' ).forEach( textarea => {
-		textarea.style.display = AppState.ui.generationParamsHidden ? 'none' : '';
-	} );
-
 	document.querySelectorAll( '.generation-prompt-preview' ).forEach( textarea => {
 		textarea.style.display = AppState.ui.generationPromptsHidden ? 'none' : '';
 	} );
@@ -244,10 +228,7 @@ export function applyGenerationPreviewVisibility() {
 }
 
 export function toggleGenerationPreview( type ) {
-	if( type === 'params' ) {
-		AppState.ui.generationParamsHidden = !AppState.ui.generationParamsHidden;
-		localStorage.setItem( 'generationParamsHidden', AppState.ui.generationParamsHidden ? 'true' : 'false' );
-	} else if( type === 'prompts' ) {
+	if( type === 'prompts' ) {
 		AppState.ui.generationPromptsHidden = !AppState.ui.generationPromptsHidden;
 		localStorage.setItem( 'generationPromptsHidden', AppState.ui.generationPromptsHidden ? 'true' : 'false' );
 	} else if( type === 'non-workflow' ) {

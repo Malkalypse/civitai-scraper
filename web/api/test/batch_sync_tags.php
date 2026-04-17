@@ -82,7 +82,7 @@ if ($action === 'sync') {
     $results['processed']++;
     
     // Fetch data from Civitai
-    $url = "https://civitai.com/models/{$modelId}";
+    $url = "https://civitai.red/models/{$modelId}";
     
     $ch = curl_init();
     curl_setopt_array($ch, [

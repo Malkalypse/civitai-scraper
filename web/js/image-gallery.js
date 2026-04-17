@@ -1,7 +1,7 @@
 import { AppState, output } from './app-context.js';
 import { waitForWorkflowSectionToBeHidden, applyGenerationPreviewVisibility, applyImageCardFilters } from './filters.js';
 import { checkCached, downloadAndCache, extractImageIdFromUrl, extractFilenameFromUrl, syncCopyAllPreviewWidth, autosizeCopyAllPreview, queueCopyAllPreviewHydration, toggleImageFavorite } from './image-cache.js';
-import { copyImageWorkflow, analyzeImageWorkflow } from './workflow.js';
+import { copyImageWorkflow, analyzeImageWorkflow, retrySingleImageWorkflowScan } from './workflow.js';
 import { escapeHtml } from './dom-utils.js';
 
 function initializeImageGalleryEventHandlers() {
@@ -25,6 +25,12 @@ function initializeImageGalleryEventHandlers() {
 		const workflowAnalyzeBtn = event.target.closest( '.workflow-analyze-btn' );
 		if( workflowAnalyzeBtn && output.contains( workflowAnalyzeBtn ) ) {
 			analyzeImageWorkflow( workflowAnalyzeBtn );
+			return;
+		}
+
+		const noWorkflowBtn = event.target.closest( '.workflow-no-workflow[data-action="retry-workflow-scan"]' );
+		if( noWorkflowBtn && output.contains( noWorkflowBtn ) ) {
+			retrySingleImageWorkflowScan( noWorkflowBtn );
 		}
 	} );
 
@@ -205,7 +211,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 						if( shouldDelayBeforeRemoteDownload ) {
 							await new Promise( resolve => setTimeout( resolve, 1500 ) );
 						}
-						displayUrl = await downloadAndCache( info.originalUrl, info.linkUrl || info.originalUrl );
+						displayUrl = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
 						shouldDelayBeforeRemoteDownload = true;
 					} else {
 						shouldDelayBeforeRemoteDownload = false;
@@ -241,8 +247,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 									<button type="button" class="workflow-copy-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Copy Workflow</button>
 									<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Analyze Workflow</button>
 								</div>
-								<div class="workflow-no-workflow" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none;">No Workflow</div>
-								<textarea class="generation-preview generation-params-preview" readonly style="margin-top: 6px; width: 100%; min-height: 42px; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; line-height: 1.35; white-space: pre-wrap; resize: none; overflow: hidden; box-sizing: border-box;">Loading parameters...</textarea>
+								<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none; background: transparent; border: none; padding: 0; cursor: pointer; text-decoration: underline;">No Workflow</button>
 								<textarea class="generation-preview generation-prompt-preview" readonly style="margin-top: 6px; width: 100%; min-height: 78px; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; line-height: 1.35; white-space: pre-wrap; resize: none; overflow: hidden; box-sizing: border-box;">Loading prompt...</textarea>
 							</div>`;
 					}
@@ -256,13 +261,12 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					renderedCount++;
 					if( !info.isVideo ) {
 						const card = slot.firstElementChild;
-						const paramsField = card ? card.querySelector( '.generation-params-preview' ) : null;
 						const promptField = card ? card.querySelector( '.generation-prompt-preview' ) : null;
 						const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 						syncCopyAllPreviewWidth( card );
 						applyGenerationPreviewVisibility();
 						applyImageCardFilters();
-						queueCopyAllPreviewHydration( paramsField, promptField, favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
+						queueCopyAllPreviewHydration( promptField, favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
 							modelId: AppState.model.currentModelId,
 							modelVersionId: AppState.model.currentVersionId,
 							imageFilename: extractFilenameFromUrl( displayUrl )
@@ -360,7 +364,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 						if( shouldDelayBeforeRemoteDownload ) {
 							await new Promise( resolve => setTimeout( resolve, 1500 ) );
 						}
-						displayUrl = await downloadAndCache( info.originalUrl, info.linkUrl || info.originalUrl );
+						displayUrl = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
 						shouldDelayBeforeRemoteDownload = true;
 					} else {
 						shouldDelayBeforeRemoteDownload = false;
@@ -396,8 +400,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 									<button type="button" class="workflow-copy-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Copy Workflow</button>
 									<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Analyze Workflow</button>
 								</div>
-								<div class="workflow-no-workflow" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none;">No Workflow</div>
-								<textarea class="generation-preview generation-params-preview" readonly style="margin-top: 6px; width: 100%; min-height: 42px; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; line-height: 1.35; white-space: pre-wrap; resize: none; overflow: hidden; box-sizing: border-box;">Loading parameters...</textarea>
+								<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none; background: transparent; border: none; padding: 0; cursor: pointer; text-decoration: underline;">No Workflow</button>
 								<textarea class="generation-preview generation-prompt-preview" readonly style="margin-top: 6px; width: 100%; min-height: 78px; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; line-height: 1.35; white-space: pre-wrap; resize: none; overflow: hidden; box-sizing: border-box;">Loading prompt...</textarea>
 							</div>`;
 					}
@@ -411,13 +414,12 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					renderedCount++;
 					if( !info.isVideo ) {
 						const card = slot.firstElementChild;
-						const paramsField = card ? card.querySelector( '.generation-params-preview' ) : null;
 						const promptField = card ? card.querySelector( '.generation-prompt-preview' ) : null;
 						const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 						syncCopyAllPreviewWidth( card );
 						applyGenerationPreviewVisibility();
 						applyImageCardFilters();
-						queueCopyAllPreviewHydration( paramsField, promptField, favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
+						queueCopyAllPreviewHydration( promptField, favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
 							modelId: AppState.model.currentModelId,
 							modelVersionId: AppState.model.currentVersionId,
 							imageFilename: extractFilenameFromUrl( displayUrl )

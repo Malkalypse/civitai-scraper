@@ -1,6 +1,6 @@
 <?php
 /**
- * Get workflow id/revision pairs for a model version.
+ * Get workflow hashes for a model version from version_workflows.
  */
 
 require_once __DIR__ . '/../api_utils.php';
@@ -20,39 +20,37 @@ if ($conn->connect_error) {
 
 $conn->set_charset('utf8mb4');
 
-$sql = 'SELECT DISTINCT workflow_id, workflow_revision FROM version_workflows WHERE version_id = ? ORDER BY workflow_revision ASC, workflow_id ASC';
+$sql = 'SELECT workflow_hash, COUNT(*) AS image_count FROM images WHERE model_version_id = ? AND workflow_hash IS NOT NULL AND workflow_hash <> "" AND workflow_hash <> "-1" GROUP BY workflow_hash ORDER BY image_count DESC, workflow_hash ASC';
 $stmt = $conn->prepare($sql);
 if (!$stmt) {
-  api_send_failure('Prepare failed: ' . $conn->error, 500);
   $conn->close();
+  api_send_failure('Prepare failed: ' . $conn->error, 500);
 }
 
 $stmt->bind_param('i', $versionId);
 if (!$stmt->execute()) {
-  api_send_failure('Execute failed: ' . $stmt->error, 500);
+  $error = $stmt->error;
   $stmt->close();
   $conn->close();
+  api_send_failure('Execute failed: ' . $error, 500);
 }
 
 $result = $stmt->get_result();
 $workflows = [];
-
 if ($result) {
   while ($row = $result->fetch_assoc()) {
     if (!is_array($row)) {
       continue;
     }
 
-    $workflowId = isset($row['workflow_id']) ? trim((string)$row['workflow_id']) : '';
-    $workflowRevision = isset($row['workflow_revision']) ? (string)$row['workflow_revision'] : '';
-
-    if ($workflowId === '' || $workflowRevision === '') {
+    $workflowHash = isset($row['workflow_hash']) ? trim((string)$row['workflow_hash']) : '';
+    if ($workflowHash === '') {
       continue;
     }
 
     $workflows[] = [
-      'workflowId' => $workflowId,
-      'workflowRevision' => $workflowRevision
+      'workflowHash' => $workflowHash,
+      'imageCount' => isset($row['image_count']) ? (int)$row['image_count'] : 0
     ];
   }
 }

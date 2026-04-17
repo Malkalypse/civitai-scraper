@@ -1,10 +1,10 @@
 import { toggleTag } from './sidebar.js';
 import { loadModelVersion } from './model-loading.js';
 import { resetFilename, handleFilenameKeydown, handleOriginalFilenameKeydown } from './file-editing.js';
-// import { addSettingsSet } from './settings-ui.js';
 
 import { AppState, modelInput, output } from './app-context.js';
 import { escapeHtml } from './dom-utils.js';
+import { scanMissingImageWorkflows } from './workflow.js';
 
 import { setupWorkflowAnalysisVisibilityObserver, applyGenerationPreviewVisibility, loadVersionWorkflowFilters, toggleGenerationPreview } from './filters.js';
 import { updateThumbnailSize, loadModelImages } from './image-gallery.js';
@@ -22,17 +22,17 @@ function initializeModelActionsHandlers() {
 	}
 
 	// Set up click handler to toggle tags
-	const tagsContainer = document.getElementById( 'tagsContainer' );
-	if( tagsContainer ) {
-		tagsContainer.addEventListener( 'click', ( event ) => {
+	const modelTagsContainer = document.getElementById( 'modelTagsContainer' );
+	if( modelTagsContainer ) {
+		modelTagsContainer.addEventListener( 'click', ( event ) => {
 			const tagElement = event.target.closest( '.model-tag' );
-			if( tagElement && tagsContainer.contains( tagElement ) ) {
+			if( tagElement && modelTagsContainer.contains( tagElement ) ) {
 				toggleTag( tagElement ); // sidebar.js
 			}
 		} );
 	}
 
-	// Set up click handler to load specific model version
+	// Set up click handler for model version links
 	const versionsContainer = document.getElementById( 'versionsContainer' );
 	if( versionsContainer ) {
 		versionsContainer.addEventListener( 'click', ( event ) => {
@@ -58,16 +58,6 @@ function initializeModelActionsHandlers() {
 				return;
 			}
 
-			// Settings tools are currently obsolete due Workflow Analysis tools.
-			// Keep old add-settings-set handler commented for possible future restoration.
-			/*
-			const addSettingsSetBtn = event.target.closest( '[data-action="add-settings-set"]' );
-			if( addSettingsSetBtn && output.contains( addSettingsSetBtn ) ) {
-				addSettingsSet();	// settings-ui.js
-				return;
-			}
-			*/
-
 			// Clear cache for model or all models
 			const clearCacheBtn = event.target.closest( '[data-action="clear-cache"]' );
 			if( clearCacheBtn && output.contains( clearCacheBtn ) ) {
@@ -76,7 +66,15 @@ function initializeModelActionsHandlers() {
 				return;
 			}
 
-			// [Show/Hide Params|Prompts|Non-Workflow|Non-Favorites] buttons
+			const scanWorkflowsBtn = event.target.closest( '[data-action="scan-workflows"]' );
+			if( scanWorkflowsBtn && output.contains( scanWorkflowsBtn ) ) {
+				const rescanCheckbox = document.getElementById( 'scanWorkflowsRescan' );
+				const rescanAll = rescanCheckbox ? rescanCheckbox.checked === true : false;
+				scanMissingImageWorkflows( scanWorkflowsBtn, { rescanAll } );
+				return;
+			}
+
+			// [Show/Hide Prompts|Non-Workflow|Non-Favorites] buttons
 			const togglePreviewBtn = event.target.closest( '[data-toggle-type]' );
 			if( togglePreviewBtn && output.contains( togglePreviewBtn ) ) {
 				toggleGenerationPreview( togglePreviewBtn.dataset.toggleType ); // filters.js
@@ -167,8 +165,6 @@ export async function fetchData( options = {} ) {
 	// Destructure modelInput and imageLoadToken from prepared request state
 	const { modelInput, imageLoadToken } = requestState;
 
-	console.log( `Initiating fetchData for modelInput: ${modelInput} with options:`, options );
-
 	try {
 		// Fetch model data
 		const result = await fetchModelInput( modelInput );
@@ -184,6 +180,7 @@ export async function fetchData( options = {} ) {
 			const selectedVersion = result.selectedVersion || null;
 			await applyResult( result, modelInput, selectedVersion );
 
+			// Render model tags based on fetched result
 			renderTags( result );
 
 			// Render version links based on extracted model versions and selected version
@@ -221,8 +218,9 @@ export async function fetchData( options = {} ) {
 }
 
 /** Prepare state and UI for fetching model data
+ * 
+ * `fetchData() > prepareFetchDataRequest()`
  * @param {*} options Optional settings for the fetch operation
- * - If options.preserveFilename is true, does not reset current filename in AppState before fetching
  * @returns Object containing modelInput and imageLoadToken (or null)
  */
 function prepareFetchDataRequest( options = {} ) {
@@ -266,14 +264,26 @@ function prepareFetchDataRequest( options = {} ) {
 }
 
 /** Fetch model data from server
- * @param {*} modelInput The input to fetch model data for
- * @returns A promise that resolves to the fetched model data
+ * 
+ * `fetchData() > fetchModelInput()`
+ * @param {*} modelInput Input to fetch model data for
+ * @returns Promise that resolves to fetched model data
+ * 
+ * Returned data should contain the following:
+ * - data										(Object):		Main model data object
+ * - dataInfo								(Object):		Additional info about data
+ * - modelId								(string):		ID of model
+ * - modelTags							(array):		Array of model tags
+ * - selectedVersion				(Object):		Currently selected version object
+ * - success								(boolean):	Indicates whether fetch was successful
+ * - urlInfo								(Object):		Information about model URL
+ * - versionSelectionMethod	(string):		Method used to select version
  */
 async function fetchModelInput( modelInput ) {
 
-	const cacheBuster = new Date().getTime();
-
-	const response = await fetch( `api/models/fetch_data.php?_=${cacheBuster}`, {
+	// Make POST request to fetch model data
+	const cacheBuster	= new Date().getTime();
+	const response		= await fetch( `api/models/fetch_data.php?_=${cacheBuster}`, {
 		method: 'POST',
 		headers: {
 			'Content-Type':		'application/json',
@@ -281,16 +291,16 @@ async function fetchModelInput( modelInput ) {
 		},
 		body: JSON.stringify( { modelInput: modelInput } )
 	} );
-
 	const result = await response.json();
 	if ( result.debug ) {
 		console.log( '[fetch_data debug]', result.debug );
 	}
+	console.log( 'fetchModelInput() result:', result );
 	return result;
 }
 
 /** Apply fetched model data and check if model exists in database
- * - Uupdates properties in AppState.model based on fetched result and selected version
+ * - Updates properties in AppState.model based on fetched result and selected version
  * - After updating, calls checkModelInDatabase() to verify model existence in database
  * @param {*} result					The fetched model data
  * @param {*} modelInput				The full model input string
@@ -307,15 +317,13 @@ async function applyResult( result, modelInput, selectedVersion ) {
 
 	AppState.model.currentOriginalFilename		= null;
 	AppState.model.currentModelExistsInDb			= false;
-	AppState.settings.currentSettingsSets			= [];
-	AppState.settings.currentSamplerOptions		= [];
-	AppState.settings.currentSchedulerOptions	= [];
-	AppState.settings.currentSettingsShowAll	= {};
 
 	await checkModelInDatabase( AppState.model.currentModelId, selectedVersion );
 }
 
 /** Extract model context information
+ * 
+ * `fetchData() > modelContext()`
  * @param {*} result The fetched model data result object
  * @returns An object containing modelVersions, modelType, and trpcDescription
  */
@@ -335,24 +343,37 @@ function modelContext( result ) {
 }
 
 /** Render model tags section
+ * `fetchData() > renderTags()`
+ * 
  * @param {*} result Fetched model data result object containing model tags information
+ *
+ * `result` is fetched in `fetchModelInput()`
  */
 function renderTags( result ) {
 	if( result.modelTags && Array.isArray( result.modelTags ) && result.modelTags.length > 0 ) {
-		const tagsContainer			= document.getElementById( 'tagsContainer' );
-		tagsContainer.innerHTML	= buildModelTagsHtml( result.modelTags );
+		const modelTagsContainer			= document.getElementById( 'modelTagsContainer' );
+		modelTagsContainer.innerHTML	= buildModelTagsHtml( result.modelTags );
 		document.getElementById( 'modelTags' ).classList.add( 'visible' );
 	}
 }
 
 /** Render version links section
- * @param {*} modelVersions Fetched model versions array
- * @param {*} selectedVersion Selected version object
+ * 
+ * `fetchData() > renderVersionLinks()`
+ * @param {*} modelVersions		Fetched model versions array
+ * @param {*} selectedVersion	Selected version object
+ * 
+ * `modelVersions` is fetched in `fetchModelInput()` and extracted in `modelContext()`
+ * 
+ * Each version should contain the following:
+ * - id					(number):						version ID
+ * - name				(string):						version name
+ * - baseModel	(string, optional):	base model name for this version
  */
 function renderVersionLinks( modelVersions, selectedVersion ) {
 	if( modelVersions && Array.isArray( modelVersions ) && modelVersions.length > 0 ) {
 		const versionsContainer			= document.getElementById( 'versionsContainer' );
-		const selectedVersionId					= selectedVersion?.id || null;
+		const selectedVersionId			= selectedVersion?.id || null;
 		versionsContainer.innerHTML	= buildVersionLinksHtml( modelVersions, selectedVersionId );
 		document.getElementById( 'versionLinks' ).classList.add( 'visible' );
 	}
@@ -410,7 +431,7 @@ function initializeModelView( selectedVersion ) {
 }
 
 /** Update cache info display and load model images
- * @param {string} modelId ID of the model
+ * @param {string} modelId ID of model
  */
 function updateCacheDisplay( modelId ) {
 	getCacheSize( modelId ).then( cacheInfo => {

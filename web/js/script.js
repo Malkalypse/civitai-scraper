@@ -83,7 +83,7 @@ function buildSourceUrl( rawInput ) {
 		try {
 			const parsed = value.startsWith( 'http://' ) || value.startsWith( 'https://' )
 				? new URL( value )
-				: new URL( `https://civitai.com/models/${value.replace( /^\/+/, '' )}` );
+				: new URL( `https://civitai.red/models/${value.replace( /^\/+/, '' )}` );
 
 			const pathMatch = parsed.pathname.match( /\/models\/(\d+)/i );
 			if( pathMatch ) {
@@ -100,7 +100,7 @@ function buildSourceUrl( rawInput ) {
 	}
 
 	const versionQuery = modelVersionId ? `?modelVersionId=${encodeURIComponent( modelVersionId )}` : '';
-	return `https://civitai.com/models/${encodeURIComponent( modelId )}${versionQuery}`;
+	return `https://civitai.red/models/${encodeURIComponent( modelId )}${versionQuery}`;
 }
 
 // Add error handling for initialization

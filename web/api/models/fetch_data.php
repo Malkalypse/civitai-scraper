@@ -28,6 +28,19 @@ function getModelInput() {
   return $input['modelInput'] ?? $input['modelData'] ?? null;
 }
 
+/** Extract modelId from input string
+ * @param string $modelInput Raw modelInput input
+ * @return string modelId
+ */
+function getModelId( string $modelInput ): string {
+  if ( preg_match( '/(?:models\/)?(\d+)/', $modelInput, $idMatch ) ) {
+    global $debug;
+    $debug .= "\n  modelId: " . json_encode( $idMatch[1] );
+    return $idMatch[1];
+  }
+  return preg_replace( '/[?&].*$/', '', $modelInput );
+}
+
 /** Extract modelVersionId from input string if present
  * @param string $modelInput Raw modelInput input which may contain query parameters
  * @return int|null Extracted modelVersionId as integer (or null)
@@ -42,25 +55,12 @@ function getVersionId( string $modelInput ): ?int {
   return null;
 }
 
-/** Extract modelId from input string
- * @param string $modelInput Raw modelInput input
- * @return string modelId
- */
-function getModelId( string $modelInput ): string {
-  if ( preg_match( '/(?:models\/)?(\d+)/', $modelInput, $idMatch ) ) {
-    global $debug;
-    $debug .= "\n  modelId: " . json_encode( $idMatch[1] );
-    return $idMatch[1];
-  }
-  return preg_replace( '/[?&].*$/', '', $modelInput );
-}
-
 /** Build URL to Civitai model page from modelInput
  * @param string $modelInput The model data input
  * @return string The constructed URL to the model page
  */
 function buildModelUrl( string $modelInput ): string {
-  return "https://civitai.com/models/{$modelInput}";
+  return "https://civitai.red/models/{$modelInput}";
 }
 
 /** Fetch the HTML content of a Civitai model page
@@ -178,34 +178,40 @@ function getModelTags( array $decoded ): array {
  * @param array     $modelVersions  Array of model versions
  * @param int|null  $versionId      Optional versionId to match against modelVersions
  * @return array Array with:
- *  'selectedVersion'         (array|null) and
- *  'versionSelectionMethod'  (string) keys
+ *  `selectedVersion`         (array|null) and
+ *  `versionSelectionMethod`  (string)
  */
 function selectModelVersion( array $modelVersions, ?int $versionId ): array {
   $selectedVersion        = null;
   $versionSelectionMethod = null;
 
-  if ( !empty( $modelVersions ) ) {
+  // modelVersions not empty
+  if( !empty( $modelVersions ) ) {
 
-    if ( $versionId !== null ) {
+    // versionId provided
+    if( $versionId !== null ) { 
 
-      foreach ( $modelVersions as $version ) {
-        if ( isset( $version['id'] ) && (int)$version['id'] === $versionId ) {
+      // Search for version with matching ID
+      foreach( $modelVersions as $version ) {
+        if( isset( $version['id'] ) && (int)$version['id'] === $versionId ) {
           $selectedVersion        = $version;
           $versionSelectionMethod = "Matched modelVersionId={$versionId} from URL";
           break;
         }
       }
 
-      if ( !$selectedVersion ) {
+      // No match found
+      if( !$selectedVersion ) {
         $versionSelectionMethod = "modelVersionId={$versionId} not found in modelVersions array";
       }
 
+    // No versionId provided, default to first version
     } else {
       $selectedVersion        = $modelVersions[0];
       $versionSelectionMethod = 'No modelVersionId in URL, using first version';
     }
 
+  // modelVersions empty or not found
   } else {
     $versionSelectionMethod = 'modelVersions array is empty';
   }
@@ -258,7 +264,7 @@ function buildSuccessResponse(
     'modelId'   => $modelId,
     'urlInfo'   => $urlInfo,
     'dataInfo'  => [
-      'step'        => 2,
+      'step'        => 2, // used by frontend to track progress
       'message'     => '__NEXT_DATA__ JSON Structure',
       'foundScript' => true,
       'jsonSize'    => strlen( $jsonData )
