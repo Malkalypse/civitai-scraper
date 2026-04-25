@@ -72,11 +72,11 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 	const { modelId = null, modelVersionId = null, imageFilename = '' } = options;
 
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
-		return { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '' };
+		return { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false, parametersHash: '' };
 	}
 
 	if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
-		return AppState.runtime.copyAllTextCache.get( imageId ) || { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '' };
+		return AppState.runtime.copyAllTextCache.get( imageId ) || { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false, parametersHash: '' };
 	}
 
 	if( AppState.runtime.copyAllTextPending.has( imageId ) ) {
@@ -113,13 +113,15 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 				favorite: result.favorite === true,
 				workflowPresent: result.workflowPresent === true,
 				workflowNull: result.workflowNull === true,
-				workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : ''
+				workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : '',
+				parametersPresent: result.parametersPresent === true,
+				parametersHash: typeof result.parametersHash === 'string' ? result.parametersHash : ''
 			};
 			AppState.runtime.copyAllTextCache.set( imageId, payload );
 			return payload;
 		} catch( error ) {
 			console.warn( `Could not fetch generation data for image ${imageId}:`, error );
-			const emptyPayload = { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '' };
+			const emptyPayload = { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false, parametersHash: '' };
 			return emptyPayload;
 		} finally {
 			AppState.runtime.copyAllTextPending.delete( imageId );
@@ -238,19 +240,24 @@ export function processCopyAllPreviewQueue() {
 				const workflowPresent = payload?.workflowPresent === true;
 				const workflowNull = payload?.workflowNull === true;
 				const workflowHash = typeof payload?.workflowHash === 'string' ? payload.workflowHash : '';
+				const parametersPresent = payload?.parametersPresent === true;
+				const parametersHash = typeof payload?.parametersHash === 'string' ? payload.parametersHash : '';
 
 				job.promptTextarea.value = promptText !== '' ? promptText : 'Prompt unavailable';
 				if( job.favoriteCheckbox ) {
 					job.favoriteCheckbox.checked = favorite;
 					job.favoriteCheckbox.dataset.workflowPresent = workflowPresent ? '1' : '0';
 					job.favoriteCheckbox.dataset.workflowNull = workflowNull ? '1' : '0';
+					job.favoriteCheckbox.dataset.parametersPresent = parametersPresent ? '1' : '0';
 					applyWorkflowIdentityToCard( job.favoriteCheckbox, workflowHash );
 					updateImageCardState( job.favoriteCheckbox, {
 						favoriteLoaded: true,
 						favorite,
 						workflowLoaded: true,
 						workflowPresent,
-						workflowNull
+						workflowNull,
+						parametersPresent,
+						parametersHash
 					} );
 					setFavoriteImageBorder( job.favoriteCheckbox, favorite );
 				}
@@ -264,7 +271,7 @@ export function processCopyAllPreviewQueue() {
 	}
 }
 
-export function applyImageCardBorder( referenceElement, isFavorite = false, workflowPresent = false, workflowNull = false ) {
+export function applyImageCardBorder( referenceElement, isFavorite = false, workflowPresent = false, workflowNull = false, parametersPresent = false ) {
 	if( !referenceElement ) {
 		return;
 	}
@@ -275,13 +282,18 @@ export function applyImageCardBorder( referenceElement, isFavorite = false, work
 		return;
 	}
 
-	if( workflowNull ) {
-		image.style.borderColor = '#bf4547';
+	if( workflowPresent ) {
+		image.style.borderColor = '#419f3f';
 		return;
 	}
 
-	if( workflowPresent ) {
-		image.style.borderColor = '#419f3f';
+	if( parametersPresent ) {
+		image.style.borderColor = 'rgb(12, 133, 153)';
+		return;
+	}
+
+	if( workflowNull ) {
+		image.style.borderColor = '#bf4547';
 		return;
 	}
 
@@ -306,13 +318,24 @@ export function updateWorkflowActionsVisibility( referenceElement ) {
 
 	const workflowLoaded = card.dataset.workflowLoaded === '1';
 	const workflowNull = card.dataset.workflowNull === '1';
-	const showNoWorkflow = workflowLoaded && workflowNull;
+	const parametersPresent = card.dataset.parametersPresent === '1';
+	const showNoWorkflow = workflowLoaded && workflowNull && !parametersPresent;
+
+	const copyBtn = card.querySelector( '.workflow-copy-btn' );
+	if( copyBtn ) {
+		copyBtn.textContent = parametersPresent ? 'Copy Parameters' : 'Copy Workflow';
+	}
+
+	const analyzeBtn = card.querySelector( '.workflow-analyze-btn' );
+	if( analyzeBtn ) {
+		analyzeBtn.textContent = parametersPresent ? 'Analyze Parameters' : 'Analyze Workflow';
+	}
 
 	actions.style.display = showNoWorkflow ? 'none' : 'flex';
 	noWorkflowLabel.style.display = showNoWorkflow ? '' : 'none';
 }
 
-export function updateImageCardState( referenceElement, { favoriteLoaded = null, favorite = null, workflowLoaded = null, workflowPresent = null, workflowNull = null } = {} ) {
+export function updateImageCardState( referenceElement, { favoriteLoaded = null, favorite = null, workflowLoaded = null, workflowPresent = null, workflowNull = null, parametersPresent = null, parametersHash = null } = {} ) {
 	if( !referenceElement ) {
 		return;
 	}
@@ -342,6 +365,14 @@ export function updateImageCardState( referenceElement, { favoriteLoaded = null,
 		card.dataset.workflowNull = workflowNull ? '1' : '0';
 	}
 
+	if( parametersPresent !== null ) {
+		card.dataset.parametersPresent = parametersPresent ? '1' : '0';
+	}
+
+	if( parametersHash !== null ) {
+		card.dataset.parametersHash = String( parametersHash || '' ).trim();
+	}
+
 	updateWorkflowActionsVisibility( referenceElement );
 	applyImageCardFilters();
 }
@@ -353,7 +384,8 @@ export function setFavoriteImageBorder( checkbox, isFavorite ) {
 
 	const workflowPresent = checkbox.dataset.workflowPresent === '1';
 	const workflowNull = checkbox.dataset.workflowNull === '1';
-	applyImageCardBorder( checkbox, isFavorite, workflowPresent, workflowNull );
+	const parametersPresent = checkbox.dataset.parametersPresent === '1';
+	applyImageCardBorder( checkbox, isFavorite, workflowPresent, workflowNull, parametersPresent );
 }
 
 export async function toggleImageFavorite( checkbox ) {

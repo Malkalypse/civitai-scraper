@@ -6,75 +6,130 @@
  * Formats a COPY ALL style text block.
  */
 
+require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
-header('Content-Type: application/json');
+header( 'Content-Type: application/json' );
 
-$input = json_decode(file_get_contents('php://input'), true);
-$imageId = isset($input['imageId']) ? (int)$input['imageId'] : 0;
-$inputModelId = isset($input['modelId']) ? (string)$input['modelId'] : '';
-$inputModelVersionId = isset($input['modelVersionId']) ? (string)$input['modelVersionId'] : '';
-$inputImageFilename = isset($input['imageFilename']) ? trim((string)$input['imageFilename']) : '';
+$input                = json_decode( file_get_contents( 'php://input' ), true );
+$imageId              = isset( $input['imageId'] ) ? ( int )$input['imageId'] : 0;
+$inputModelId         = isset( $input['modelId'] ) ? ( string )$input['modelId'] : '';
+$inputModelVersionId  = isset( $input['modelVersionId'] ) ? ( string )$input['modelVersionId'] : '';
+$inputImageFilename   = isset( $input['imageFilename'] ) ? trim( ( string )$input['imageFilename'] ) : '';
 
-if ($imageId <= 0) {
-  echo json_encode(['success' => false, 'error' => 'Missing or invalid imageId']);
+if( $imageId <= 0 ) {
+  echo json_encode( ['success' => false, 'error' => 'Missing or invalid imageId'] );
   exit;
 }
 
-function extractPromptTextFromCopyAll(string $copyAllText): string {
-  $text = trim($copyAllText);
-  if ($text === '') {
+function composeGenerationParts( array $meta ): array {
+  $rawParameters = isset( $meta['parameters'] ) ? trim( ( string )$meta['parameters'] ) : '';
+  if( $rawParameters !== '' ) {
+    $prompt = $rawParameters;
+    if( preg_match( '/\R\s*Negative prompt\s*:/i', $rawParameters, $match, PREG_OFFSET_CAPTURE ) === 1 && isset( $match[0][1] ) ) {
+      $prompt = trim( substr( $rawParameters, 0, (int)$match[0][1] ) );
+    }
+
+    return [
+      'promptText' => $prompt,
+      'copyAllText' => $rawParameters
+    ];
+  }
+
+  $prompt = isset( $meta['prompt'] ) ? trim( ( string )$meta['prompt'] ) : '';
+  $negativePrompt = isset( $meta['negativePrompt'] ) ? trim( ( string )$meta['negativePrompt'] ) : '';
+
+  $extractValue = static function( array $source, string $primaryKey, array $fallbackKeys = [] ) {
+    $keys = array_merge( [ $primaryKey ], $fallbackKeys );
+    foreach( $keys as $key ) {
+      if( !array_key_exists( $key, $source ) ) {
+        continue;
+      }
+
+      $value = $source[ $key ];
+      if( is_array( $value ) || is_object( $value ) ) {
+        continue;
+      }
+
+      $normalized = trim( ( string )$value );
+      if( $normalized !== '' ) {
+        return $normalized;
+      }
+    }
+
     return '';
+  };
+
+  $modelHashFromHashes = '';
+  if( isset( $meta['hashes'] ) && is_array( $meta['hashes'] ) ) {
+    $modelHashFromHashes = trim( ( string )( $meta['hashes']['model'] ?? '' ) );
   }
 
-  $parts = preg_split("/\R\R+/", $text);
-  if (!is_array($parts) || count($parts) === 0) {
-    return $text;
+  $orderedOptions = [
+    'Steps' => $extractValue( $meta, 'steps' ),
+    'CFG scale' => $extractValue( $meta, 'cfgScale', [ 'CFG scale' ] ),
+    'Sampler' => $extractValue( $meta, 'sampler', [ 'Sampler' ] ),
+    'Seed' => $extractValue( $meta, 'seed', [ 'Seed' ] ),
+    'VAE' => $extractValue( $meta, 'VAE', [ 'vae' ] ),
+    'Size' => $extractValue( $meta, 'Size', [ 'size' ] ),
+    'Model' => $extractValue( $meta, 'Model', [ 'model' ] ),
+    'Version' => $extractValue( $meta, 'Version', [ 'version' ] ),
+    'Model hash' => $extractValue( $meta, 'Model hash', [ 'model hash' ] ),
+    'Schedule type' => $extractValue( $meta, 'Schedule type', [ 'scheduleType', 'schedule type' ] ),
+  ];
+
+  if( $orderedOptions['Model hash'] === '' && $modelHashFromHashes !== '' ) {
+    $orderedOptions['Model hash'] = $modelHashFromHashes;
   }
 
-  $lastPart = trim((string)$parts[count($parts) - 1]);
-  $looksLikeParams = preg_match('/(?:^|[\r\n,]\s*)[A-Za-z][A-Za-z0-9 _-]*\s*:\s*[^,\r\n]+/', $lastPart) === 1;
+  // Include ADetailer and related scalar meta fields if present.
+  foreach( $meta as $key => $value ) {
+    if( !is_string( $key ) ) {
+      continue;
+    }
 
-  if (!$looksLikeParams) {
-    return $text;
+    if( !is_scalar( $value ) ) {
+      continue;
+    }
+
+    $normalizedValue = trim( ( string )$value );
+    if( $normalizedValue === '' ) {
+      continue;
+    }
+
+    $normalizedKey = trim( $key );
+    $startsWithADetailer = stripos( $normalizedKey, 'ADetailer ' ) === 0;
+    $isClipSkip = strcasecmp( $normalizedKey, 'clipSkip' ) === 0 || strcasecmp( $normalizedKey, 'Clip skip' ) === 0;
+
+    if( $startsWithADetailer ) {
+      $orderedOptions[ $normalizedKey ] = $normalizedValue;
+      continue;
+    }
+
+    if( $isClipSkip ) {
+      $orderedOptions['Clip skip'] = $normalizedValue;
+    }
   }
 
-  array_pop($parts);
-  return trim(implode("\n\n", $parts));
-}
-
-function composeGenerationParts(array $meta): array {
-  $prompt = isset($meta['prompt']) ? trim((string)$meta['prompt']) : '';
-  $fields = [];
-
-  if (isset($meta['steps']) && $meta['steps'] !== '') {
-    $fields[] = 'Steps: ' . $meta['steps'];
+  $optionPairs = [];
+  foreach( $orderedOptions as $label => $value ) {
+    if( trim( ( string )$value ) === '' ) {
+      continue;
+    }
+    $optionPairs[] = $label . ': ' . $value;
   }
 
-  if (isset($meta['sampler']) && trim((string)$meta['sampler']) !== '') {
-    $fields[] = 'Sampler: ' . trim((string)$meta['sampler']);
+  $copySegments = [];
+  if( $prompt !== '' ) {
+    $copySegments[] = $prompt;
+  }
+  if( $negativePrompt !== '' ) {
+    $copySegments[] = 'Negative prompt: ' . $negativePrompt;
+  }
+  if( count( $optionPairs ) > 0 ) {
+    $copySegments[] = implode( ', ', $optionPairs );
   }
 
-  if (isset($meta['seed']) && $meta['seed'] !== '') {
-    $fields[] = 'Seed: ' . $meta['seed'];
-  }
-
-  $vae = '';
-  if (isset($meta['VAE']) && trim((string)$meta['VAE']) !== '') {
-    $vae = trim((string)$meta['VAE']);
-  } elseif (isset($meta['vae']) && trim((string)$meta['vae']) !== '') {
-    $vae = trim((string)$meta['vae']);
-  }
-  if ($vae !== '') {
-    $fields[] = 'VAE: ' . $vae;
-  }
-
-  $generationDetails = implode("\n", $fields);
-  $copyAllText = $prompt;
-  if ($copyAllText !== '' && $generationDetails !== '') {
-    $copyAllText .= "\n\n" . $generationDetails;
-  } elseif ($copyAllText === '') {
-    $copyAllText = $generationDetails;
-  }
+  $copyAllText = implode( "\n", $copySegments );
 
   return [
     'promptText' => $prompt,
@@ -82,166 +137,183 @@ function composeGenerationParts(array $meta): array {
   ];
 }
 
-function normalizeFavoriteValue($value): bool {
-  if (is_bool($value)) {
-    return $value;
+function shouldRefreshTruncatedCopyAllText( string $promptText, string $copyAllText ): bool {
+  $trimmedCopy = trim( $copyAllText );
+  if( $trimmedCopy === '' ) {
+    return false;
   }
-  if (is_numeric($value)) {
-    return ((int)$value) === 1;
-  }
-  if (is_string($value)) {
-    $trimmed = strtolower(trim($value));
-    return in_array($trimmed, ['1', 'true', 'yes', 'y', 'on'], true);
-  }
-  return false;
+
+  $hasSteps = stripos( $trimmedCopy, 'steps:' ) !== false;
+  $hasNegativePrompt = stripos( $trimmedCopy, 'negative prompt:' ) !== false;
+  $hasCfgScale = stripos( $trimmedCopy, 'cfg scale:' ) !== false;
+  $hasModelHash = stripos( $trimmedCopy, 'model hash:' ) !== false;
+
+  // Older cached rows were saved as prompt + a few newline-separated fields.
+  // Refresh these rows so the DB stores full generation details.
+  $looksLikeLegacyMinimalFormat = $hasSteps && !$hasNegativePrompt && !$hasCfgScale && !$hasModelHash;
+
+  // If prompt exists but copy text has very little detail, refresh once.
+  $shortCopyForPrompt = trim( $promptText ) !== '' && strlen( $trimmedCopy ) < ( strlen( trim( $promptText ) ) + 120 );
+
+  return $looksLikeLegacyMinimalFormat || $shortCopyForPrompt;
 }
 
-function normalizeWorkflowHashFromDb($value): ?string {
-  if ($value === null) {
+function sendResponse( $success, $imageId, $promptText = '', $copyAllText = '', $favorite = false, $workflowHash = '', $parametersHash = '', $cached = true ) {
+  $normalizedWorkflowHash   = normalizeWorkflowHashFromDb( $workflowHash );
+  $workflowPresent          = is_string( $normalizedWorkflowHash ) && $normalizedWorkflowHash !== '';
+  $normalizedParametersHash = trim( ( string )( $parametersHash ?? '' ) );
+  $parametersPresent        = $normalizedParametersHash !== '';
+  
+  echo json_encode( [
+    'success'           => $success,
+    'imageId'           => $imageId,
+    'promptText'        => $promptText,
+    'copyAllText'       => $copyAllText,
+    'favorite'          => $favorite,
+    'workflowHash'      => $normalizedWorkflowHash ?? '',
+    'workflowPresent'   => $workflowPresent,
+    'workflowNull'      => $normalizedWorkflowHash === null,
+    'parametersHash'    => $normalizedParametersHash,
+    'parametersPresent' => $parametersPresent,
+    'cached'            => $cached
+  ] );
+}
+
+/** Normalize workflow hash value from database
+ * @param mixed $value value from database (string or null)
+ * @return string|null
+ */
+function normalizeWorkflowHashFromDb( $value ): ?string {
+  if( $value === null ) {
     return '';
   }
 
-  $text = trim((string)$value);
-  if ($text === '-1') {
+  $text = trim( ( string )$value );
+  if( $text === '-1' ) {
     return null;
   }
 
   return $text;
 }
 
-function sendResponse($success, $imageId, $promptText = '', $copyAllText = '', $favorite = false, $workflowHash = '', $cached = true) {
-  $normalizedWorkflowHash = normalizeWorkflowHashFromDb($workflowHash);
-  $workflowPresent = is_string($normalizedWorkflowHash) && $normalizedWorkflowHash !== '';
-  
-  echo json_encode([
-    'success' => $success,
-    'imageId' => $imageId,
-    'promptText' => $promptText,
-    'copyAllText' => $copyAllText,
-    'favorite' => $favorite,
-    'workflowHash' => $normalizedWorkflowHash ?? '',
-    'workflowPresent' => $workflowPresent,
-    'workflowNull' => $normalizedWorkflowHash === null,
-    'cached' => $cached
-  ]);
-}
 
 try {
   $db = api_db_connect();
-  if ($db->connect_error) {
-    echo json_encode(['success' => false, 'error' => 'Database connection failed']);
+  if( $db->connect_error ) {
+    echo json_encode( ['success' => false, 'error' => 'Database connection failed'] );
     exit;
   }
-  $db->set_charset('utf8mb4');
+  $db->set_charset( 'utf8mb4' );
 
   // Try to read from database first
-  $dbPromptText = '';
-  $dbCopyAllText = '';
-  $dbFavorite = false;
-  $dbWorkflowHash = '';
+  $dbPromptText     = '';
+  $dbCopyAllText    = '';
+  $dbFavorite       = false;
+  $dbWorkflowHash   = '';
+  $dbParametersHash = '';
   $dbModelVersionId = 0;
-  $dbModelId = 0;
-  $imageExists = false;
+  $dbModelId        = 0;
+  $imageExists      = false;
 
-  $sql = 'SELECT prompt_text, copy_all_text, favorite, workflow_hash, model_version_id, model_id FROM images WHERE image_id = ? LIMIT 1';
-  $stmt = $db->prepare($sql);
-  if ($stmt) {
-    $stmt->bind_param('i', $imageId);
+  $sql = 'SELECT prompt_text, copy_all_text, favorite, workflow_hash, parameters_hash, model_version_id, model_id FROM images WHERE image_id = ? LIMIT 1';
+  $stmt = $db->prepare( $sql );
+  if( $stmt ) {
+    $stmt->bind_param( 'i', $imageId );
     $stmt->execute();
     $result = $stmt->get_result();
-    if ($result && ($row = $result->fetch_assoc())) {
-      $imageExists = true;
-      $dbPromptText = (string)($row['prompt_text'] ?? '');
-      $dbCopyAllText = (string)($row['copy_all_text'] ?? '');
-      $dbFavorite = (bool)($row['favorite'] ?? false);
-      $dbWorkflowHash = $row['workflow_hash'] ?? '';
-      $dbModelVersionId = (int)($row['model_version_id'] ?? 0);
-      $dbModelId = (int)($row['model_id'] ?? 0);
+    if( $result && ( $row = $result->fetch_assoc() ) ) {
+      $imageExists      = true;
+      $dbPromptText     = ( string )( $row['prompt_text'] ?? '' );
+      $dbCopyAllText    = ( string )( $row['copy_all_text'] ?? '' );
+      $dbFavorite       = ( bool )( $row['favorite'] ?? false );
+      $dbWorkflowHash   = $row['workflow_hash'] ?? '';
+      $dbParametersHash = $row['parameters_hash'] ?? '';
+      $dbModelVersionId = ( int )( $row['model_version_id'] ?? 0 );
+      $dbModelId        = ( int )( $row['model_id'] ?? 0 );
     }
     $stmt->close();
   }
 
   // If we have cached generation text in the database, return it immediately
-  $hasGenerationText = (trim($dbPromptText) !== '' || trim($dbCopyAllText) !== '');
+  $hasGenerationText = (trim( $dbPromptText ) !== '' || trim( $dbCopyAllText ) !== '');
   
-  if ($imageExists && $hasGenerationText) {
+  if( $imageExists && $hasGenerationText && !shouldRefreshTruncatedCopyAllText( $dbPromptText, $dbCopyAllText ) ) {
     $db->close();
-    sendResponse(true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, true);
+    sendResponse( true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, $dbParametersHash, true );
     exit;
   }
 
   // Fetch from Civitai API
-  $trpcInput = json_encode(['json' => ['id' => $imageId]]);
-  $trpcUrl = 'https://civitai.red/api/trpc/image.getGenerationData?input=' . urlencode($trpcInput);
+  $trpcInput  = json_encode( ['json' => ['id' => $imageId]] );
+  $trpcUrl    = SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GEN . '?input=' . urlencode($trpcInput);
 
   $ch = curl_init();
-  curl_setopt_array($ch, [
-    CURLOPT_URL => $trpcUrl,
-    CURLOPT_RETURNTRANSFER => true,
-    CURLOPT_TIMEOUT => 20,
-    CURLOPT_SSL_VERIFYPEER => false,
-    CURLOPT_USERAGENT => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-    CURLOPT_HTTPHEADER => [
+  curl_setopt_array( $ch, [
+    CURLOPT_URL             => $trpcUrl,
+    CURLOPT_RETURNTRANSFER  => true,
+    CURLOPT_TIMEOUT         => 20,
+    CURLOPT_SSL_VERIFYPEER  => false,
+    CURLOPT_USERAGENT       => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    CURLOPT_HTTPHEADER      => [
       'Accept: application/json'
     ]
-  ]);
+  ] );
 
-  $response = curl_exec($ch);
-  $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-  curl_close($ch);
+  $response = curl_exec( $ch );
+  $httpCode = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
 
-  if (!$response || $httpCode !== 200) {
+  if( !$response || $httpCode !== 200 ) {
     $db->close();
-    if ($imageExists) {
-      sendResponse(true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, true);
+    if( $imageExists ) {
+      sendResponse( true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, $dbParametersHash, true );
     } else {
-      sendResponse(false, $imageId);
+      sendResponse( false, $imageId );
     }
     exit;
   }
 
   // Parse API response
-  $data = json_decode($response, true);
-  $jsonRoot = $data['result']['data']['json'] ?? [];
-  $meta = $jsonRoot['meta'] ?? null;
-  $resources = isset($jsonRoot['resources']) && is_array($jsonRoot['resources']) ? $jsonRoot['resources'] : [];
+  $data       = json_decode( $response, true );
+  $jsonRoot   = $data['result']['data']['json'] ?? [];
+  $meta       = $jsonRoot['meta'] ?? null;
+  $resources  = isset( $jsonRoot['resources'] ) && is_array( $jsonRoot['resources'] ) ? $jsonRoot['resources'] : [];
 
-  $resolvedModelId = $inputModelId !== '' ? (int)$inputModelId : $dbModelId;
-  $resolvedModelVersionId = $inputModelVersionId !== '' ? (int)$inputModelVersionId : $dbModelVersionId;
+  $resolvedModelId        = $inputModelId !== '' ? ( int )$inputModelId : $dbModelId;
+  $resolvedModelVersionId = $inputModelVersionId !== '' ? ( int )$inputModelVersionId : $dbModelVersionId;
 
   // Extract model IDs from API resources if still missing
-  if (($resolvedModelId === 0 || $resolvedModelVersionId === 0) && count($resources) > 0 && is_array($resources[0])) {
+  if( ( $resolvedModelId === 0 || $resolvedModelVersionId === 0 ) && count( $resources ) > 0 && is_array( $resources[0] ) ) {
     $firstResource = $resources[0];
-    if ($resolvedModelId === 0 && isset($firstResource['modelId'])) {
-      $resolvedModelId = (int)$firstResource['modelId'];
+    if( $resolvedModelId === 0 && isset( $firstResource['modelId'] ) ) {
+      $resolvedModelId = ( int )$firstResource['modelId'];
     }
-    if ($resolvedModelVersionId === 0 && isset($firstResource['modelVersionId'])) {
-      $resolvedModelVersionId = (int)$firstResource['modelVersionId'];
+    if( $resolvedModelVersionId === 0 && isset( $firstResource['modelVersionId'] ) ) {
+      $resolvedModelVersionId = ( int )$firstResource['modelVersionId'];
     }
-    if ($resolvedModelVersionId === 0 && isset($firstResource['versionId'])) {
-      $resolvedModelVersionId = (int)$firstResource['versionId'];
+    if( $resolvedModelVersionId === 0 && isset( $firstResource['versionId'] ) ) {
+      $resolvedModelVersionId = ( int )$firstResource['versionId'];
     }
   }
 
-  $promptText = '';
-  $copyAllText = '';
-  $favorite = $dbFavorite;
+  $promptText   = '';
+  $copyAllText  = '';
+  $favorite     = $dbFavorite;
 
-  if (!is_array($meta)) {
+  if( !is_array( $meta ) ) {
     $db->close();
-    sendResponse(true, $imageId, '', '', $favorite, $dbWorkflowHash, false);
+    sendResponse( true, $imageId, '', '', $favorite, $dbWorkflowHash, $dbParametersHash, false );
     exit;
   }
 
-  $parts = composeGenerationParts($meta);
-  $promptText = $parts['promptText'];
-  $copyAllText = $parts['copyAllText'];
+  $parts        = composeGenerationParts( $meta );
+  $promptText   = $parts['promptText'];
+  $copyAllText  = $parts['copyAllText'];
 
   // Update database with fetched generation data
   $imageFilename = $inputImageFilename !== '' ? $inputImageFilename : '';
   $updateSql = 'INSERT INTO images ' .
-               '(image_id, model_id, model_version_id, image_filename, prompt_text, copy_all_text, favorite, workflow_hash) ' .
-               'VALUES (?, ?, ?, ?, ?, ?, ?, ?) ' .
+               '(image_id, model_id, model_version_id, image_filename, prompt_text, copy_all_text, favorite, workflow_hash, parameters_hash) ' .
+               'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ' .
                'ON DUPLICATE KEY UPDATE ' .
                '  model_id = COALESCE(NULLIF(?, 0), model_id), ' .
                '  model_version_id = COALESCE(NULLIF(?, 0), model_version_id), ' .
@@ -251,23 +323,23 @@ try {
                '  favorite = ?, ' .
                '  updated_at = CURRENT_TIMESTAMP';
 
-  $updateStmt = $db->prepare($updateSql);
-  if ($updateStmt) {
-    $updateStmt->bind_param('iiissssiiiissi',
+  $updateStmt = $db->prepare( $updateSql );
+  if( $updateStmt ) {
+    $updateStmt->bind_param( 'iiisssissiisssi',
       $imageId, $resolvedModelId, $resolvedModelVersionId, $imageFilename,
-      $promptText, $copyAllText, $favorite, $dbWorkflowHash,
+      $promptText, $copyAllText, $favorite, $dbWorkflowHash, $dbParametersHash,
       $resolvedModelId, $resolvedModelVersionId, $imageFilename,
-      $promptText, $copyAllText, $favorite);
+      $promptText, $copyAllText, $favorite );
     $updateStmt->execute();
     $updateStmt->close();
   }
 
   $db->close();
-  sendResponse(true, $imageId, $promptText, $copyAllText, $favorite, $dbWorkflowHash, false);
+  sendResponse( true, $imageId, $promptText, $copyAllText, $favorite, $dbWorkflowHash, $dbParametersHash, false );
 
-} catch (Exception $e) {
-  echo json_encode([
+} catch( Exception $e ) {
+  echo json_encode( [
     'success' => false,
     'error' => 'Exception: ' . $e->getMessage()
-  ]);
+  ] );
 }

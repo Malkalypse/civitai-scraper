@@ -1,3 +1,4 @@
+<?php require_once __DIR__ . '/prefs.php'; ?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -5,6 +6,13 @@
 	<meta charset="UTF-8">
 	<title>Civitai Data Viewer</title>
 	<link rel="stylesheet" href="css/style.css">
+	<script>
+	window.SiteConfig = <?php echo json_encode( [
+		'modelsBaseUrl'      => SITE_URL_MODELS,
+		'modelUrlPrefix'     => SITE_UI_MODEL_URL_PREFIX,
+		'inputPlaceholder'   => SITE_UI_INPUT_PLACEHOLDER,
+	], JSON_HEX_TAG | JSON_UNESCAPED_SLASHES ); ?>;
+	</script>
 </head>
 
 <body>
@@ -24,8 +32,8 @@
 
 			<!-- Input group for model ID -->
 			<div class="input-group">
-				<span class="url-prefix">https://civitai.red/models/</span>
-				<input type="text" id="modelInput" placeholder="Enter model ID (e.g., 43331)" autofocus>
+				<span class="url-prefix" id="modelUrlPrefix"><?php echo htmlspecialchars( SITE_UI_MODEL_URL_PREFIX, ENT_QUOTES, 'UTF-8' ); ?></span>
+				<input type="text" id="modelInput" placeholder="<?php echo htmlspecialchars( SITE_UI_INPUT_PLACEHOLDER, ENT_QUOTES, 'UTF-8' ); ?>" autofocus>
 				<button id="sourceBtn">Source</button>
 			</div>
 

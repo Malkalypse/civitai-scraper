@@ -26,27 +26,35 @@ export function setupWorkflowAnalysisVisibilityObserver() {
 		AppState.workflow.workflowVisibilityObserver = null;
 	}
 
-	const section = document.getElementById( 'workflowAnalysisSection' );
-	if( !section ) {
+	const workflowSection = document.getElementById( 'workflowAnalysisSection' );
+	const parametersSection = document.getElementById( 'parametersAnalysisSection' );
+	if( !workflowSection && !parametersSection ) {
 		setWorkflowAnalysisSectionVisible( false );
 		return;
 	}
 
 	AppState.workflow.workflowVisibilityObserver = new IntersectionObserver( ( entries ) => {
-		const entry = entries[0];
-		if( !entry ) {
-			setWorkflowAnalysisSectionVisible( false );
-			return;
-		}
+		const visibleSet = new Set();
+		entries.forEach( entry => {
+			if( entry && entry.isIntersecting && entry.target instanceof HTMLElement && entry.target.style.display !== 'none' ) {
+				visibleSet.add( entry.target.id );
+			}
+		} );
 
-		const isVisible = entry.isIntersecting && section.style.display !== 'none';
+		const isVisible = visibleSet.has( 'workflowAnalysisSection' ) || visibleSet.has( 'parametersAnalysisSection' );
 		setWorkflowAnalysisSectionVisible( isVisible );
 	}, {
 		root: null,
 		threshold: 0.05
 	} );
 
-	AppState.workflow.workflowVisibilityObserver.observe( section );
+	if( workflowSection ) {
+		AppState.workflow.workflowVisibilityObserver.observe( workflowSection );
+	}
+
+	if( parametersSection ) {
+		AppState.workflow.workflowVisibilityObserver.observe( parametersSection );
+	}
 }
 
 export function updateGenerationPreviewToggleButtons() {

@@ -12,6 +12,8 @@ export function loadModelVersion( modelVersionString ) {
 
 /** Load specific model version when a version link is clicked
  * @param {*} element
+ * 
+ * loadModelFromSidebar > fetchData > fetchModelInput > fetch_data.php
  */
 export function loadModelFromSidebar( element ) {
 

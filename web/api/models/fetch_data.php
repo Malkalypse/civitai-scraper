@@ -9,6 +9,8 @@
  * Called by frontend with a modelInput string (e.g. "12345?modelVersionId=678")
  */
 
+require_once __DIR__ . '/../../config/site.php';
+
 header( 'Content-Type: application/json' );
 
 function respondError( string $message ): void {
@@ -17,9 +19,8 @@ function respondError( string $message ): void {
 }
 
 /** Get raw JSON input and decode it
- *
+ * - Expects input JSON like: { "modelInput": "12345?modelVersionId=678" }
  * @return string|null modelInput from input (or null)
- * Expects input JSON like: { "modelInput": "12345?modelVersionId=678" }
  */
 function getModelInput() {
   $input = json_decode( file_get_contents( 'php://input' ), true );
@@ -60,7 +61,7 @@ function getVersionId( string $modelInput ): ?int {
  * @return string The constructed URL to the model page
  */
 function buildModelUrl( string $modelInput ): string {
-  return "https://civitai.red/models/{$modelInput}";
+  return SITE_URL_MODELS . '/' . $modelInput;
 }
 
 /** Fetch the HTML content of a Civitai model page

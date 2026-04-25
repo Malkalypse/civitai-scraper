@@ -16,6 +16,7 @@ if ($imageId <= 0) {
 $hasWorkflowEntry = false;
 $workflowNull = false;
 $workflowHash = '';
+$parametersHash = '';
 
 try {
   $db = api_db_connect();
@@ -24,8 +25,8 @@ try {
   }
   $db->set_charset('utf8mb4');
 
-  // Query the images table for workflow_hash
-  $sql = 'SELECT workflow_hash FROM images WHERE image_id = ? LIMIT 1';
+  // Query the images table for workflow_hash + parameters_hash classification.
+  $sql = 'SELECT workflow_hash, parameters_hash FROM images WHERE image_id = ? LIMIT 1';
   $stmt = $db->prepare($sql);
   if (!$stmt) {
     $db->close();
@@ -43,10 +44,12 @@ try {
   $result = $stmt->get_result();
   if ($result && ($row = $result->fetch_assoc())) {
     $workflowValue = $row['workflow_hash'];
+    $parametersValue = $row['parameters_hash'] ?? null;
+    $parametersHash = is_string($parametersValue) ? trim($parametersValue) : '';
 
     if ($workflowValue === null) {
-      // NULL means "no workflow entry yet".
-      $hasWorkflowEntry = false;
+      // NULL means "no workflow entry yet" unless parameters metadata exists.
+      $hasWorkflowEntry = $parametersHash !== '';
       $workflowNull = false;
       $workflowHash = '';
     } elseif (is_string($workflowValue)) {
@@ -77,7 +80,9 @@ try {
     'imageId' => $imageId,
     'hasWorkflowEntry' => $hasWorkflowEntry,
     'workflowNull' => $workflowNull,
-    'workflowHash' => $workflowHash
+    'workflowHash' => $workflowHash,
+    'parametersHash' => $parametersHash,
+    'parametersPresent' => $parametersHash !== ''
   ]);
 
 } catch (Exception $e) {

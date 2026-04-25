@@ -111,19 +111,25 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 
 	const versionId = selectedVersion.id;
 
+	const fetchImageData = async () => {
+		const response = await fetch( 'api/models/get_model_images.php', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify( { modelId, versionId } )
+		} );
+		return response.json();
+	};
+
+	const MAX_GALLERY_RETRIES = 3;
+	const GALLERY_RETRY_DELAY_MS = 2000;
+
 	try {
 		await pauseIfWorkflowAnalysisVisible();
 		if( isStale() ) {
 			return;
 		}
 
-		const response = await fetch( 'api/models/get_model_images.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( { modelId, versionId } )
-		} );
-
-		const result = await response.json();
+		let result = await fetchImageData();
 		if( isStale() ) {
 			return;
 		}
@@ -133,6 +139,39 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 			setStatus( 'carouselStatus', '(error loading)' );
 			setStatus( 'galleryStatus', '(error loading)' );
 			return;
+		}
+
+		const carouselSucceeded = result.carouselImages && result.carouselImages.length > 0;
+		const galleryEmpty = !result.galleryImages || result.galleryImages.length === 0;
+
+		if( carouselSucceeded && galleryEmpty ) {
+			for( let attempt = 1; attempt <= MAX_GALLERY_RETRIES; attempt++ ) {
+				if( isStale() ) {
+					return;
+				}
+				setStatus( 'galleryStatus', `(retrying ${attempt}/${MAX_GALLERY_RETRIES}...)` );
+				await new Promise( resolve => setTimeout( resolve, GALLERY_RETRY_DELAY_MS ) );
+				if( isStale() ) {
+					return;
+				}
+
+				let retryResult;
+				try {
+					retryResult = await fetchImageData();
+				} catch( retryError ) {
+					console.warn( `Gallery retry ${attempt} fetch failed:`, retryError );
+					continue;
+				}
+
+				if( retryResult.galleryImages && retryResult.galleryImages.length > 0 ) {
+					result = retryResult;
+					break;
+				}
+			}
+
+			if( isStale() ) {
+				return;
+			}
 		}
 
 		if( result.carouselImages && result.carouselImages.length > 0 ) {

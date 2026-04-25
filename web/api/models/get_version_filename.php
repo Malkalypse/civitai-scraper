@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../config/site.php';
 header('Content-Type: application/json');
 
 function getCivitaiAuthHeaders() {
@@ -231,7 +232,7 @@ function resolveDownloadFilenameFromUrl($downloadUrl) {
 	return $urlCache[$downloadUrl];
 }
 
-$url = "https://civitai.red/api/v1/model-versions/{$versionId}";
+$url = SITE_URL_API_REST . '/model-versions/' . $versionId;
 $ch = curl_init();
 curl_setopt_array($ch, [
 	CURLOPT_URL => $url,

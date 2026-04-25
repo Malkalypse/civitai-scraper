@@ -8,6 +8,8 @@
 // Clean any previous output
 while (ob_get_level()) ob_end_clean();
 
+require_once __DIR__ . '/../../config/site.php';
+
 // Start output buffering to catch any errors
 ob_start();
 
@@ -36,7 +38,7 @@ if (!$imageUrl) {
  * Normalize Civitai CDN URLs to a 450px optimized variant.
  */
 function toCivitaiThumbnailUrl($url, $transform = 'anim=false,width=450,optimized=true') {
-  if (!is_string($url) || (stripos($url, 'image.civitai.red') === false && stripos($url, 'image.civitai.com') === false)) {
+  if (!is_string($url) || (stripos($url, SITE_CDN_BASE) === false && stripos($url, SITE_CDN_LEGACY) === false)) {
     return $url;
   }
 
@@ -57,14 +59,18 @@ function toCivitaiThumbnailUrl($url, $transform = 'anim=false,width=450,optimize
     return $normalized;
   }
 
-  if (preg_match('~^https?://image\.civitai\.com/[^/]+/([^/]+)(?:/(.*))?$~i', $url, $matches)) {
-    $token = $matches[1];
-    $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
-    $newUrl = 'https://image.civitai.red/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/' . $transform;
-    if ($tail !== '' && stripos($tail, 'original=true') !== 0) {
-      $newUrl .= '/' . $tail;
+  // Legacy CDN URL: extract token from path and build primary CDN URL
+  if (stripos($url, SITE_CDN_LEGACY) !== false) {
+    $path = substr($url, strlen(SITE_CDN_LEGACY));
+    if (preg_match('~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches)) {
+      $token = $matches[1];
+      $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
+      $newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/' . $transform;
+      if ($tail !== '' && stripos($tail, 'original=true') !== 0) {
+        $newUrl .= '/' . $tail;
+      }
+      return $newUrl;
     }
-    return $newUrl;
   }
 
   return $url;

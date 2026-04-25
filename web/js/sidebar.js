@@ -16,6 +16,7 @@ let modelClickHandler = null;
 
 /** Set click handler for files in sidebar
  * @param {function} handler Function to call when a file item is clicked
+ * - Set to loadModelFromSidebar in script.js
  */
 export function setModelClickHandler( handler ) {
   modelClickHandler = typeof handler === 'function' ? handler : null;

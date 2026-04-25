@@ -303,7 +303,7 @@ async function fetchModelInput( modelInput ) {
  * - Updates properties in AppState.model based on fetched result and selected version
  * - After updating, calls checkModelInDatabase() to verify model existence in database
  * @param {*} result					The fetched model data
- * @param {*} modelInput				The full model input string
+ * @param {*} modelInput			The full model input string
  * @param {*} selectedVersion	The selected version of the model
  */
 async function applyResult( result, modelInput, selectedVersion ) {

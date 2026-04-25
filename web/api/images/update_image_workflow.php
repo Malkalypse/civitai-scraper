@@ -41,6 +41,14 @@ function normalizeWorkflowHashForStorage($value): string {
   return $text;
 }
 
+function normalizeParametersHashForStorage($value): string {
+  if ($value === null) {
+    return '';
+  }
+
+  return trim((string)$value);
+}
+
 try {
   $db = api_db_connect();
   if ($db->connect_error) {
@@ -50,13 +58,22 @@ try {
 
   // Use -1 sentinel for confirmed missing workflow.
   $workflowHash = '-1';
+  $parametersHash = '';
   if ($workflowState === 'present') {
     $workflowHash = $hasWorkflowKey ? normalizeNonEmptyString($workflowValue) : '';
     if ($workflowHash === '' || $workflowHash === '-1') {
       api_send_failure('Missing workflow hash');
     }
+    $parametersHash = '';
+  } elseif ($workflowState === 'parameters_only') {
+    $workflowHash = '-1';
+    $parametersHash = $hasWorkflowKey ? normalizeParametersHashForStorage($workflowValue) : '';
+    if ($parametersHash === '') {
+      $parametersHash = '1';
+    }
   } elseif ($workflowState === 'missing') {
     $workflowHash = '-1';
+    $parametersHash = '';
   } elseif ($hasWorkflowKey) {
     $workflowHash = normalizeWorkflowHashForStorage($workflowValue);
   }
@@ -65,12 +82,13 @@ try {
   $modelVersionId = (int)$modelVersionId;
 
   // Upsert into images table: insert or update the image record with metadata
-  $sql = 'INSERT INTO images (image_id, model_id, model_version_id, image_filename, workflow_hash) ' .
-         'VALUES (?, ?, ?, ?, ?) ' .
+    $sql = 'INSERT INTO images (image_id, model_id, model_version_id, image_filename, workflow_hash, parameters_hash) ' .
+      'VALUES (?, ?, ?, ?, ?, ?) ' .
          'ON DUPLICATE KEY UPDATE model_id = VALUES(model_id), ' .
          '                        model_version_id = VALUES(model_version_id), ' .
          '                        image_filename = VALUES(image_filename), ' .
          '                        workflow_hash = VALUES(workflow_hash), ' .
+      '                        parameters_hash = VALUES(parameters_hash), ' .
          '                        updated_at = CURRENT_TIMESTAMP';
 
   $stmt = $db->prepare($sql);
@@ -85,7 +103,7 @@ try {
     $modelIdInt = 0;
   }
 
-  $stmt->bind_param('iisss', $imageId, $modelIdInt, $modelVersionId, $imageFilename, $workflowHash);
+  $stmt->bind_param('iiisss', $imageId, $modelIdInt, $modelVersionId, $imageFilename, $workflowHash, $parametersHash);
   if (!$stmt->execute()) {
     $error = $stmt->error;
     $stmt->close();
@@ -100,7 +118,8 @@ try {
   echo json_encode([
     'success' => true,
     'imageId' => $imageId,
-    'workflowNull' => $workflowHash === '-1'
+    'workflowNull' => $workflowHash === '-1',
+    'parametersPresent' => $parametersHash !== ''
   ]);
 
 } catch (Exception $e) {

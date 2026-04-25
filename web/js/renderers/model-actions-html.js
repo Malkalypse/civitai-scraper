@@ -63,6 +63,7 @@ export function buildFetchDataHtml( {
 	html += buildCacheInfoSectionHtml();
 	html += buildThumbnailControlsSectionHtml();
 	html += buildImagesSectionHtml();
+	html += buildParametersAnalysisSectionHtml();
 	html += buildWorkflowAnalysisSectionHtml();
 
 	return html;
@@ -272,6 +273,22 @@ export function buildWorkflowAnalysisSectionHtml() {
 				<button type="button" id="workflowToggleTextBtn" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Text</button>
 			</div>
 			<div id="workflowAnalysisNodeList" style="display: flex; flex-direction: column; gap: 8px; margin-top: 10px;"></div>
+			<div id="workflowJsonExportControls" style="display: none; margin-top: 10px;">
+				<button type="button" id="workflowOutputJsonBtn" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Output as JSON</button>
+				<span id="workflowOutputJsonStatus" style="margin-left: 8px; color: #8aa0ae; font-size: 11px;"></span>
+			</div>
+		</div>
+	`;
+}
+
+/** Build HTML for parameters analysis section
+ * @returns {string} HTML string representing the parameters analysis section
+ */
+export function buildParametersAnalysisSectionHtml() {
+	return `
+		<div class="info" id="parametersAnalysisSection" style="display: none;">
+			<strong id="parametersAnalysisTitle">Parameters Analysis</strong>
+			<pre id="parametersAnalysisContent" style="margin-top: 10px; white-space: pre-wrap; word-break: break-word; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 10px; max-height: 500px; overflow: auto;"></pre>
 		</div>
 	`;
 }

@@ -1,6 +1,100 @@
+/** Database synchronization functions for Civitai Scraper
+ * - Handles syncing of model and tag data to local database via API endpoints
+ * - Provides function to check if a model/version exists in database and update UI accordingly
+ * - Expects certain structure in __NEXT_DATA__ from Civitai model pages for extracting tags and version info
+ */
+
 import { AppState } from './app-context.js';
 import { loadLoras, loadCheckpoints } from './sidebar.js';
 
+
+/** Add currently selected model/version to database
+ * @param {number|string}	modelId					civitai model ID to add
+ * @param {object}				selectedVersion currently selected version object
+ * @returns {Promise<void>}
+ */
+export async function addModelToDatabase( modelId, selectedVersion ) {
+	console.log( 'addModelToDatabase called with:', { modelId, versionId: selectedVersion?.id } );
+
+	const addToDbBtn		= document.getElementById( 'addToDbBtn' );
+	const addToDbStatus	= document.getElementById( 'addToDbStatus' );
+
+	if( !addToDbBtn || !addToDbStatus ) {
+		console.error( 'Button elements not found!' );
+		return;
+	}
+
+	if( !modelId || !selectedVersion ) {
+		console.error( 'Missing modelId or selectedVersion!' );
+		addToDbStatus.textContent = '❌ Error: Missing model data';
+		addToDbStatus.style.color = '#fa5252';
+		return;
+	}
+
+	addToDbBtn.disabled				= true;
+	addToDbStatus.textContent	= '⏳ Adding to database...';
+	addToDbStatus.style.color	= '#868e96';
+
+	try {
+		const cacheBuster	= new Date().getTime();
+		const response		= await fetch( `api/models/fetch_data.php?_=${cacheBuster}`, {
+			method:		'POST',
+			headers:	{
+				'Content-Type':		'application/json',
+				'Cache-Control':	'no-cache'
+			},
+			body:			JSON.stringify( { modelInput: modelId } )
+		} );
+
+		const result = await response.json();
+
+		if( result.error || !result.data ) {
+			throw new Error( result.error || 'Failed to fetch model data' );
+		}
+
+		let filename = await fetchOriginalFilename( selectedVersion.id );
+		if( filename ) {
+			console.log( `Using canonical download filename: ${filename}` );
+		}
+
+		if( !filename && AppState.model.currentFilename ) {
+			filename = AppState.model.currentFilename.endsWith( '.safetensors' ) ? AppState.model.currentFilename : `${AppState.model.currentFilename}.safetensors`;
+			console.log( `Using filename from sidebar: ${filename}` );
+		}
+
+		if( !filename ) {
+			const modelName = selectedVersion.name || 'model';
+			filename = `${modelName.replace( /[^a-zA-Z0-9_-]/g, '_' )}.safetensors`;
+			console.log( `Generated fallback filename: ${filename}` );
+		}
+
+		await syncTagsToDatabase( result.data, modelId );
+		await syncModelsToDatabase( result.data, modelId, filename, selectedVersion.id );
+
+		addToDbStatus.textContent = '✅ Successfully added to database!';
+		addToDbStatus.style.color = '#51cf66';
+
+		await Promise.all( [
+			loadLoras( true ),
+			loadCheckpoints( true )
+		] );
+
+		setTimeout( () => {
+			document.getElementById( 'addToDbSection' ).style.display = 'none';
+		}, 3000 );
+
+	} catch( error ) {
+		console.error( 'Error adding to database:', error );
+		addToDbStatus.textContent	= `❌ Error: ${error.message}`;
+		addToDbStatus.style.color	= '#fa5252';
+		addToDbBtn.disabled				= false;
+	}
+}
+
+/** Fetch original filename for given model version ID from server
+ * @param {number|string} versionId model version ID to fetch filename for
+ * @returns {Promise<string>} original filename (or empty string)
+ */
 export async function fetchOriginalFilename( versionId ) {
 	console.log( `Fetching canonical download filename for version ${versionId}` );
 
@@ -23,6 +117,10 @@ export async function fetchOriginalFilename( versionId ) {
 	return '';
 }
 
+/** Sync tags from fetched model data to database for given model ID	
+ * @param {*} nextData	__NEXT_DATA__ object from model page
+ * @param {*} modelId		model ID to sync tags for
+ */
 export async function syncTagsToDatabase( nextData, modelId ) {
 	try {
 		const tagsOnModels = nextData?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.tagsOnModels;
@@ -66,6 +164,12 @@ export async function syncTagsToDatabase( nextData, modelId ) {
 	}
 }
 
+/** Sync model version data to database for given model ID and version ID
+ * @param {*}							nextData					__NEXT_DATA__ object from model page
+ * @param {*}							modelId						model ID to sync
+ * @param {string}				filename					filename to use for this version in database
+ * @param {number|string}	clickedVersionId	version ID of clicked version
+ */
 export async function syncModelsToDatabase( nextData, modelId, filename, clickedVersionId ) {
 	try {
 		const modelVersions = nextData?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.modelVersions;
@@ -105,82 +209,6 @@ export async function syncModelsToDatabase( nextData, modelId, filename, clicked
 	}
 }
 
-export async function addModelToDatabase( modelId, selectedVersion ) {
-	console.log( 'addModelToDatabase called with:', { modelId, versionId: selectedVersion?.id } );
-
-	const addToDbBtn = document.getElementById( 'addToDbBtn' );
-	const addToDbStatus = document.getElementById( 'addToDbStatus' );
-
-	if( !addToDbBtn || !addToDbStatus ) {
-		console.error( 'Button elements not found!' );
-		return;
-	}
-
-	if( !modelId || !selectedVersion ) {
-		console.error( 'Missing modelId or selectedVersion!' );
-		addToDbStatus.textContent = '❌ Error: Missing model data';
-		addToDbStatus.style.color = '#fa5252';
-		return;
-	}
-
-	addToDbBtn.disabled = true;
-	addToDbStatus.textContent = '⏳ Adding to database...';
-	addToDbStatus.style.color = '#868e96';
-
-	try {
-		const cacheBuster = new Date().getTime();
-		const response = await fetch( `api/models/fetch_data.php?_=${cacheBuster}`, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json',
-				'Cache-Control': 'no-cache'
-			},
-			body: JSON.stringify( { modelInput: modelId } )
-		} );
-
-		const result = await response.json();
-
-		if( result.error || !result.data ) {
-			throw new Error( result.error || 'Failed to fetch model data' );
-		}
-
-		let filename = await fetchOriginalFilename( selectedVersion.id );
-		if( filename ) {
-			console.log( `Using canonical download filename: ${filename}` );
-		}
-
-		if( !filename && AppState.model.currentFilename ) {
-			filename = AppState.model.currentFilename.endsWith( '.safetensors' ) ? AppState.model.currentFilename : `${AppState.model.currentFilename}.safetensors`;
-			console.log( `Using filename from sidebar: ${filename}` );
-		}
-
-		if( !filename ) {
-			const modelName = selectedVersion.name || 'model';
-			filename = `${modelName.replace( /[^a-zA-Z0-9_-]/g, '_' )}.safetensors`;
-			console.log( `Generated fallback filename: ${filename}` );
-		}
-
-		await syncTagsToDatabase( result.data, modelId );
-		await syncModelsToDatabase( result.data, modelId, filename, selectedVersion.id );
-
-		addToDbStatus.textContent = '✅ Successfully added to database!';
-		addToDbStatus.style.color = '#51cf66';
-
-		await Promise.all( [
-			loadLoras( true ),
-			loadCheckpoints( true )
-		] );
-
-		setTimeout( () => {
-			document.getElementById( 'addToDbSection' ).style.display = 'none';
-		}, 3000 );
-	} catch( error ) {
-		console.error( 'Error adding to database:', error );
-		addToDbStatus.textContent = `❌ Error: ${error.message}`;
-		addToDbStatus.style.color = '#fa5252';
-		addToDbBtn.disabled = false;
-	}
-}
 
 /** Check if currently selected model/version exists in database and update AppState accordingly
  * @param {number|string} modelId the model ID to check

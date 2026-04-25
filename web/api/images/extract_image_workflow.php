@@ -3,7 +3,24 @@
  * Extract Workflow JSON from full-size PNG metadata
  */
 
+// Increase limits for image processing
+ini_set( 'memory_limit', '512M' );
+set_time_limit( 120 );
+
+error_reporting( E_ALL );
+ini_set( 'display_errors', '0' );
+
+$capturedErrors = [];
+
+set_error_handler(static function( $errno, $errstr, $errfile, $errline ) use (&$capturedErrors) {
+  $capturedErrors[] = [ 'number' => $errno, 'message' => $errstr, 'file' => $errfile, 'line' => $errline ];
+  return false;
+});
+
+require_once __DIR__ . '/../../config/site.php';
+
 header('Content-Type: application/json');
+header('X-Content-Type-Options: nosniff');
 
 $input = json_decode(file_get_contents('php://input'), true);
 $imageId = isset($input['imageId']) ? (int)$input['imageId'] : 0;
@@ -36,8 +53,41 @@ function fetchUrl(string $url, int $timeout = 20): array {
   ];
 }
 
+// Fetch only the first $maxBytes of an image URL using an HTTP Range request.
+// PNG tEXt/zTXt/iTXt chunks always precede IDAT, so the first 4MB is more than
+// enough to capture any workflow metadata without downloading the entire file.
+function fetchImagePartial(string $url, int $maxBytes = 4194304, int $timeout = 30): array {
+  $ch = curl_init();
+  curl_setopt_array($ch, [
+    CURLOPT_URL            => $url,
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_FOLLOWLOCATION => true,
+    CURLOPT_TIMEOUT        => $timeout,
+    CURLOPT_SSL_VERIFYPEER => false,
+    CURLOPT_USERAGENT      => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+    CURLOPT_HTTPHEADER     => ['Accept: */*'],
+    CURLOPT_RANGE          => '0-' . ($maxBytes - 1),
+  ]);
+
+  $body     = curl_exec($ch);
+  $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $error    = curl_error($ch);
+  curl_close($ch);
+
+  // 206 Partial Content is success for range requests; 200 means server ignored Range header
+  // and sent the full file — both are usable.
+  $ok = is_string($body) && $body !== '' && ($httpCode === 200 || $httpCode === 206);
+
+  return [
+    'ok'       => $ok,
+    'body'     => is_string($body) ? $body : '',
+    'httpCode' => $httpCode,
+    'error'    => $error
+  ];
+}
+
 function toCivitaiOriginalUrl(string $url): string {
-  if (stripos($url, 'image-b2.civitai.com/file/civitai-media-cache/') !== false) {
+  if (stripos($url, SITE_STORAGE_BASE) !== false) {
     $normalizedB2 = preg_replace('~/original=true(?=[/?#]|$)~i', '/original', $url, 1, $replacedB2Count);
     if ($replacedB2Count > 0 && is_string($normalizedB2)) {
       return $normalizedB2;
@@ -46,7 +96,7 @@ function toCivitaiOriginalUrl(string $url): string {
     return $url;
   }
 
-  if (stripos($url, 'image.civitai.red') === false && stripos($url, 'image.civitai.com') === false) {
+  if (stripos($url, SITE_CDN_BASE) === false && stripos($url, SITE_CDN_LEGACY) === false) {
     return $url;
   }
 
@@ -62,21 +112,25 @@ function toCivitaiOriginalUrl(string $url): string {
     return $normalized;
   }
 
-  if (preg_match('~^https?://image\.civitai\.com/[^/]+/([^/]+)(?:/(.*))?$~i', $url, $matches)) {
-    $token = $matches[1];
-    $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
+  // Legacy CDN URL: extract token from path and build primary CDN URL
+  if (stripos($url, SITE_CDN_LEGACY) !== false) {
+    $path = substr($url, strlen(SITE_CDN_LEGACY));
+    if (preg_match('~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches)) {
+      $token = $matches[1];
+      $tail = isset($matches[2]) ? trim($matches[2], '/') : '';
 
-    if ($tail !== '') {
-      $tail = preg_replace('~^(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)/?~i', '', $tail);
-      $tail = ltrim((string)$tail, '/');
+      if ($tail !== '') {
+        $tail = preg_replace('~^(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)/?~i', '', $tail);
+        $tail = ltrim((string)$tail, '/');
+      }
+
+      $newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/original=true';
+      if ($tail !== '') {
+        $newUrl .= '/' . $tail;
+      }
+
+      return $newUrl;
     }
-
-    $newUrl = 'https://image.civitai.red/xG1nkqKTMzGDvpLrqFT7WA/' . $token . '/original=true';
-    if ($tail !== '') {
-      $newUrl .= '/' . $tail;
-    }
-
-    return $newUrl;
   }
 
   return $url;
@@ -99,7 +153,7 @@ function resolveImageUrlFromCivitaiById(int $imageId): string {
     return '';
   }
 
-  $apiUrl = 'https://civitai.red/api/v1/images?imageId=' . $imageId;
+  $apiUrl = SITE_URL_API_REST . '/images?imageId=' . $imageId;
   $response = fetchUrl($apiUrl, 20);
   if ($response['ok']) {
     $decoded = json_decode($response['body'], true);
@@ -119,7 +173,7 @@ function resolveImageUrlFromCivitaiById(int $imageId): string {
   }
 
   // API lookup failed or returned no items — scrape og:image from the image page
-  $pageUrl = 'https://civitai.red/images/' . $imageId;
+  $pageUrl = SITE_URL_IMAGES . '/' . $imageId;
   $pageResponse = fetchUrl($pageUrl, 20);
   if ($pageResponse['ok']) {
     if (preg_match('~<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)["\']~i', $pageResponse['body'], $m)) {
@@ -151,7 +205,7 @@ function resolveImageUrlCandidatesFromCivitaiById(int $imageId): array {
   };
 
   // Preferred: tRPC image.get often returns the canonical UUID for the original image.
-  $trpcUrl = 'https://civitai.red/api/trpc/image.get?input=' . rawurlencode('{"json":{"id":' . $imageId . '}}');
+  $trpcUrl = SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GET . '?input=' . rawurlencode('{"json":{"id":' . $imageId . '}}');
   $trpcResponse = fetchUrl($trpcUrl, 20);
   if ($trpcResponse['ok']) {
     $trpcDecoded = json_decode($trpcResponse['body'], true);
@@ -161,7 +215,7 @@ function resolveImageUrlCandidatesFromCivitaiById(int $imageId): array {
       if (stripos($raw, 'http://') === 0 || stripos($raw, 'https://') === 0) {
         $pushUnique(toCivitaiOriginalUrl($raw));
       } else {
-        $pushUnique('https://image-b2.civitai.com/file/civitai-media-cache/' . $raw . '/original');
+        $pushUnique(SITE_STORAGE_BASE . '/' . $raw . '/original');
       }
     }
   }
@@ -171,8 +225,8 @@ function resolveImageUrlCandidatesFromCivitaiById(int $imageId): array {
     $pushUnique($restResolved);
   }
 
-  // Keep this as a final fallback because og:image can point to transformed/metadata-stripped assets.
-  $pageUrl = 'https://civitai.red/images/' . $imageId;
+  // (resolveImageUrlCandidatesFromCivitaiById continues)
+  $pageUrl = SITE_URL_IMAGES . '/' . $imageId;
   $pageResponse = fetchUrl($pageUrl, 20);
   if ($pageResponse['ok']) {
     if (preg_match('~<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)["\']~i', $pageResponse['body'], $m)) {
@@ -394,6 +448,52 @@ function selectWorkflowFromEntries(array $entries): array {
   return ['key' => '', 'workflowText' => ''];
 }
 
+function selectParametersFromEntries(array $entries): array {
+  if (count($entries) === 0) {
+    return ['key' => '', 'parametersText' => ''];
+  }
+
+  $looksLikeA1111 = static function (string $text): bool {
+    $normalized = trim($text);
+    if ($normalized === '') {
+      return false;
+    }
+
+    return stripos($normalized, 'negative prompt:') !== false
+      || stripos($normalized, 'steps:') !== false
+      || stripos($normalized, 'sampler:') !== false;
+  };
+
+  // First pass: prefer explicit `parameters` keys used by PNG metadata.
+  foreach ($entries as $entry) {
+    $key = strtolower(trim((string)($entry['keyword'] ?? '')));
+    if ($key !== 'parameters') {
+      continue;
+    }
+
+    $text = trim((string)($entry['text'] ?? ''));
+    if ($looksLikeA1111($text)) {
+      return [
+        'key' => (string)($entry['keyword'] ?? ''),
+        'parametersText' => $text
+      ];
+    }
+  }
+
+  // Second pass: JPEG metadata commonly stores A1111 text under comment/xmp/user-comment keys.
+  foreach ($entries as $entry) {
+    $text = trim((string)($entry['text'] ?? ''));
+    if ($looksLikeA1111($text)) {
+      return [
+        'key' => (string)($entry['keyword'] ?? ''),
+        'parametersText' => $text
+      ];
+    }
+  }
+
+  return ['key' => '', 'parametersText' => ''];
+}
+
 function decodeExifUserComment(string $raw): string {
   if ($raw === '') {
     return '';
@@ -562,7 +662,7 @@ function resolveImageUrlFromRestApi(int $imageId): string {
     return '';
   }
 
-  $response = fetchUrl('https://civitai.red/api/v1/images?imageId=' . $imageId, 20);
+  $response = fetchUrl(SITE_URL_API_REST . '/images?imageId=' . $imageId, 20);
   if (!$response['ok']) {
     return '';
   }
@@ -588,7 +688,7 @@ function resolveImageUrlFromTrpc(int $imageId): string {
     return '';
   }
 
-  $trpcUrl = 'https://civitai.red/api/trpc/image.get?input=' . rawurlencode('{"json":{"id":' . $imageId . '}}');
+  $trpcUrl = SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GET . '?input=' . rawurlencode('{"json":{"id":' . $imageId . '}}');
   $response = fetchUrl($trpcUrl, 20);
   if (!$response['ok']) {
     return '';
@@ -609,7 +709,7 @@ function resolveImageUrlFromTrpc(int $imageId): string {
     return toCivitaiOriginalUrl($raw);
   }
 
-  return 'https://image-b2.civitai.com/file/civitai-media-cache/' . $raw . '/original';
+  return SITE_STORAGE_BASE . '/' . $raw . '/original';
 }
 
 function extractCivitaiUuid(string $url): string {
@@ -640,8 +740,8 @@ function buildImageUrlCandidates(string $callerUrl, int $imageId): array {
     $addUnique($url);
     $uuid = extractCivitaiUuid($url);
     if ($uuid !== '') {
-      $addUnique('https://image-b2.civitai.com/file/civitai-media-cache/' . $uuid . '/original');
-      $addUnique('https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/' . $uuid . '/original=true');
+      $addUnique(SITE_STORAGE_BASE . '/' . $uuid . '/original');
+      $addUnique(SITE_CDN_LEGACY . '/' . SITE_CDN_HASH . '/' . $uuid . '/original=true');
     }
   };
 
@@ -649,7 +749,11 @@ function buildImageUrlCandidates(string $callerUrl, int $imageId): array {
     $addWithPngForms(toCivitaiOriginalUrl($callerUrl));
   }
 
-  if ($imageId > 0) {
+  // Only call the remote APIs when the caller URL didn't already give us a UUID to work with.
+  // Each API call can take up to 20 seconds (timeout); skipping them when unnecessary prevents
+  // the script from being killed by Apache's connection timeout before the image is downloaded.
+  $callerUuid = $callerUrl !== '' ? extractCivitaiUuid($callerUrl) : '';
+  if ($imageId > 0 && $callerUuid === '') {
     $addWithPngForms(resolveImageUrlFromTrpc($imageId));
     $addWithPngForms(resolveImageUrlFromRestApi($imageId));
   }
@@ -661,21 +765,38 @@ try {
   $resolvedImageId = $imageId > 0 ? $imageId : extractImageIdFromPageUrl($imagePageUrl);
 
   $candidates = buildImageUrlCandidates($fullImageUrlInput, $resolvedImageId);
+  
   if (count($candidates) === 0) {
-    echo json_encode(['success' => false, 'error' => 'Could not resolve full-size image URL']);
+    echo json_encode([
+      'success' => false,
+      'error' => 'Could not resolve full-size image URL',
+      'imageId' => $resolvedImageId,
+      'passedImageId' => $imageId,
+      'passedPageUrl' => $imagePageUrl,
+      'passedFullImageUrl' => $fullImageUrlInput
+    ]);
     exit;
   }
 
   $downloadedUrl = '';
   $lastHttpCode = 0;
+  $lastError = '';
   $entries = [];
   $selected = ['key' => '', 'workflowText' => ''];
+  $selectedParameters = ['key' => '', 'parametersText' => ''];
   $confirmedPng = false;
+  $attemptedUrls = [];
+  $downloadAttempts = 0;
+  $lastFormat = 'unknown';
 
   foreach ($candidates as $candidateUrl) {
-    $imageResponse = fetchUrl($candidateUrl, 30);
+    $downloadAttempts++;
+    $attemptedUrls[] = ['url' => $candidateUrl, 'attempt' => $downloadAttempts];
+
+    $imageResponse = fetchImagePartial($candidateUrl);
     if (!$imageResponse['ok']) {
       $lastHttpCode = (int)$imageResponse['httpCode'];
+      $lastError = $imageResponse['error'] ?? 'HTTP ' . $lastHttpCode;
       continue;
     }
 
@@ -685,23 +806,30 @@ try {
 
     if ($isPng) {
       // PNG is the authoritative source: if it contains no workflow, no other URL will either.
+      $lastFormat = 'PNG';
       $confirmedPng = true;
       $downloadedUrl = $candidateUrl;
       $entries = parsePngTextChunks($binary);
       $selected = selectWorkflowFromEntries($entries);
+      $selectedParameters = selectParametersFromEntries($entries);
       break;
     } elseif ($isJpeg) {
+      $lastFormat = 'JPEG';
       $downloadedUrl = $candidateUrl;
       $entries = parseJpegMetadataEntries($binary);
       $selected = selectWorkflowFromEntries($entries);
+      $selectedParameters = selectParametersFromEntries($entries);
+      error_log("Selected workflow: " . (strlen($selected['workflowText']) > 0 ? 'yes' : 'no'));
       if ($selected['workflowText'] !== '') {
         break;
       }
       // JPEG with no workflow: keep trying in case a later candidate returns the original PNG.
     } else {
+      $lastFormat = 'unknown';
       // Non-PNG, non-JPEG (WebP, AVIF, etc.): these formats never carry ComfyUI workflow
       // metadata, so the original image simply has no workflow. Stop trying further candidates.
       $downloadedUrl = $candidateUrl;
+      error_log("Downloaded unknown format from $candidateUrl");
       break;
     }
   }
@@ -710,31 +838,44 @@ try {
     echo json_encode([
       'success' => false,
       'error' => 'Failed to download image',
-      'httpCode' => $lastHttpCode
+      'httpCode' => $lastHttpCode,
+      'fetchError' => $lastError,
+      'imageId' => $resolvedImageId,
+      'attemptedUrls' => $attemptedUrls,
+      'downloadAttempts' => $downloadAttempts
     ]);
     exit;
   }
 
   if ($selected['workflowText'] === '') {
-    if ($confirmedPng) {
-      // Downloaded the original PNG and it contains no workflow metadata — confirmed missing.
-      echo json_encode([
-        'success' => false,
-        'error' => 'No data',
-        'errorCode' => 'WORKFLOW_NOT_FOUND',
+    if ($selectedParameters['parametersText'] !== '') {
+      $parametersPayload = json_encode([
+        'success' => true,
+        'mode' => 'parameters',
+        'message' => 'Parameters data found',
+        'errorCode' => 'PARAMETERS_FOUND',
         'chunkCount' => count($entries),
-        'imageId' => $resolvedImageId
-      ]);
-    } else {
-      // Only retrieved a JPEG — the original PNG was not reachable; treat as confirmed missing.
-      echo json_encode([
-        'success' => false,
-        'error' => 'No data',
-        'errorCode' => 'WORKFLOW_NOT_FOUND',
-        'chunkCount' => 0,
-        'imageId' => $resolvedImageId
-      ]);
+        'imageId' => $resolvedImageId,
+        'sourceKeyword' => $selectedParameters['key'],
+        'parametersText' => mb_convert_encoding($selectedParameters['parametersText'], 'UTF-8', 'UTF-8'),
+        'downloadedUrl' => $downloadedUrl,
+        'format' => $lastFormat
+      ], JSON_INVALID_UTF8_SUBSTITUTE);
+      echo $parametersPayload;
+      exit;
     }
+
+    // No workflow and no parameters found
+    echo json_encode([
+      'success' => false,
+      'error' => 'No data',
+      'errorCode' => 'WORKFLOW_NOT_FOUND',
+      'chunkCount' => count($entries),
+      'imageId' => $resolvedImageId,
+      'downloadedUrl' => $downloadedUrl,
+      'format' => $lastFormat,
+      'confirmedPng' => $confirmedPng
+    ]);
     exit;
   }
 
@@ -744,10 +885,16 @@ try {
     'imageUrl' => $downloadedUrl,
     'sourceKeyword' => $selected['key'],
     'workflowText' => $selected['workflowText']
-  ]);
-} catch (Exception $e) {
+  ], JSON_INVALID_UTF8_SUBSTITUTE);
+} catch (Throwable $e) {
+  header('Content-Type: application/json');
+  http_response_code( 500 );
   echo json_encode([
     'success' => false,
-    'error' => 'Exception: ' . $e->getMessage()
+    'error' => 'Exception: ' . $e->getMessage(),
+    'type' => get_class($e),
+    'file' => $e->getFile(),
+    'line' => $e->getLine(),
+    'capturedErrors' => $capturedErrors
   ]);
 }

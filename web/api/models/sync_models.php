@@ -1,4 +1,5 @@
 <?php
+require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
 api_set_json_header();
 
@@ -255,7 +256,7 @@ function fetchVersionFilenameFromApi($versionId) {
 		return $cache[$versionId];
 	}
 
-	$url = "https://civitai.red/api/v1/model-versions/{$versionId}";
+	$url = SITE_URL_API_REST . '/model-versions/' . $versionId;
 	$ch = curl_init();
 	curl_setopt_array($ch, [
 		CURLOPT_URL => $url,
