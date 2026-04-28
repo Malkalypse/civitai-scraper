@@ -1,42 +1,7 @@
 import { AppState } from './app-context.js';
 import { loadLoras, loadCheckpoints } from './sidebar.js';
+import { stripKnownExtension } from './file-utils.js';
 
-function getFilenameExtension( name ) {
-	if( typeof name !== 'string' ) {
-		return '';
-	}
-
-	const trimmed = name.trim();
-	const lastDot = trimmed.lastIndexOf( '.' );
-	if( lastDot <= 0 || lastDot === trimmed.length - 1 ) {
-		return '';
-	}
-
-	return trimmed.substring( lastDot ).toLowerCase();
-}
-
-function stripKnownExtension( name, originalFilename = '' ) {
-	if( typeof name !== 'string' ) {
-		return '';
-	}
-
-	let normalized = name.trim();
-	if( normalized === '' ) {
-		return '';
-	}
-
-	const originalExt = getFilenameExtension( originalFilename );
-	if( originalExt && normalized.toLowerCase().endsWith( originalExt ) ) {
-		return normalized.slice( 0, -originalExt.length );
-	}
-
-	// Backward-compatibility fallback for older rows where original filename may be missing.
-	if( normalized.toLowerCase().endsWith( '.safetensors' ) ) {
-		return normalized.slice( 0, -12 );
-	}
-
-	return normalized;
-}
 
 /** Handle keydown events for editable filename element 
  * @param {KeyboardEvent}	event
@@ -49,6 +14,105 @@ export async function handleFilenameKeydown( event, element ) {
 		element.blur();
 	}
 }
+
+
+/** Handle keydown events for original filename element
+ * @param {KeyboardEvent}	event
+ * @param {HTMLElement}		element Contenteditable element for original filename
+ */
+export async function handleOriginalFilenameKeydown( event, element ) {
+	if( event.key === 'Enter' ) {
+		event.preventDefault();
+		await saveOriginalFilename( element );
+		element.blur();
+	}
+}
+/** Save new original filename with API request
+ * @param {HTMLElement} element Contenteditable element for the original filename
+ */
+export async function saveOriginalFilename( element ) {
+	const originalValue	= element.getAttribute( 'data-original' ) || '';
+	const newValue			= element.textContent.trim();
+
+	if( newValue === originalValue ) {
+		return;
+	}
+
+	if( !AppState.model.currentVersionId ) {
+		alert( 'Cannot update original filename: version is missing.' );
+		element.textContent = originalValue;
+		return;
+	}
+
+	try {
+		// Send API request to update original filename
+		const response = await fetch( 'api/update_original_filename.php', {
+			method:		'POST',
+			headers:	{ 'Content-Type': 'application/json' },
+			body:			JSON.stringify( {
+				modelId:					AppState.model.currentModelIdForDb,
+				versionId:				AppState.model.currentVersionId,
+				originalFilename:	newValue
+			} )
+		} );
+
+		const result = await response.json();
+
+		// If update was not successful, throw error to be caught below
+		if( !response.ok || !result.success ) {
+			throw new Error( result.error || `HTTP ${response.status}` );
+		}
+
+		const savedValue												= result.originalFilename || '';
+		AppState.model.currentOriginalFilename	= savedValue;
+		element.textContent											= savedValue;
+		element.setAttribute( 'data-original', savedValue );
+
+		console.log( 'Original filename updated:', {
+			modelId: AppState.model.currentModelIdForDb,
+			versionId: AppState.model.currentVersionId,
+			originalFilename: savedValue
+		} );
+	} catch( error ) {
+		console.error( 'Error updating original filename:', error );
+		alert( 'Error updating original filename: ' + error.message );
+		element.textContent = originalValue;
+	}
+}
+
+
+/** Reset filename to original */
+export async function resetFilename() {
+
+	// Get filename element and original filename from AppState
+	const filenameElement = document.querySelector( '.editable-filename' );
+	if( !filenameElement ) {
+		alert( 'Filename element not found' );
+		return;
+	}
+	const originalFilename = filenameElement.getAttribute( 'data-original-filename' );
+	if( !originalFilename ) {
+		alert( 'Original filename not available' );
+		return;
+	}
+
+	let resetFilenameValue = stripKnownExtension( originalFilename, originalFilename );
+
+	const currentName = stripKnownExtension( filenameElement.textContent, originalFilename );
+
+	if( currentName === resetFilenameValue ) {
+		alert( 'Filename is already set to the original' );
+		return;
+	}
+
+	if( !confirm( `Reset filename from "${currentName}" to "${resetFilenameValue}"?` ) ) {
+		return;
+	}
+
+	filenameElement.textContent = resetFilenameValue;
+	await saveFilename( filenameElement, { allowMissingFile: true } );
+}
+
 
 /** Save new filename with API request
  * @param {HTMLElement} element Contenteditable element for the filename
@@ -134,102 +198,4 @@ export async function saveFilename( element, options = {} ) {
 		alert( 'Error renaming file: ' + error.message );
 		element.textContent = currentFilename;
 	}
-}
-
-/** Handle keydown events for original filename element
- * @param {KeyboardEvent}	event
- * @param {HTMLElement}		element Contenteditable element for original filename
- */
-export async function handleOriginalFilenameKeydown( event, element ) {
-	if( event.key === 'Enter' ) {
-		event.preventDefault();
-		await saveOriginalFilename( element );
-		element.blur();
-	}
-}
-
-/** Save new original filename with API request
- * @param {HTMLElement} element Contenteditable element for the original filename
- */
-export async function saveOriginalFilename( element ) {
-	const originalValue	= element.getAttribute( 'data-original' ) || '';
-	const newValue			= element.textContent.trim();
-
-	if( newValue === originalValue ) {
-		return;
-	}
-
-	if( !AppState.model.currentVersionId ) {
-		alert( 'Cannot update original filename: version is missing.' );
-		element.textContent = originalValue;
-		return;
-	}
-
-	try {
-		// Send API request to update original filename
-		const response = await fetch( 'api/update_original_filename.php', {
-			method:		'POST',
-			headers:	{ 'Content-Type': 'application/json' },
-			body:			JSON.stringify( {
-				modelId:					AppState.model.currentModelIdForDb,
-				versionId:				AppState.model.currentVersionId,
-				originalFilename:	newValue
-			} )
-		} );
-
-		const result = await response.json();
-
-		// If update was not successful, throw error to be caught below
-		if( !response.ok || !result.success ) {
-			throw new Error( result.error || `HTTP ${response.status}` );
-		}
-
-		const savedValue												= result.originalFilename || '';
-		AppState.model.currentOriginalFilename	= savedValue;
-		element.textContent											= savedValue;
-		element.setAttribute( 'data-original', savedValue );
-
-		console.log( 'Original filename updated:', {
-			modelId: AppState.model.currentModelIdForDb,
-			versionId: AppState.model.currentVersionId,
-			originalFilename: savedValue
-		} );
-	} catch( error ) {
-		console.error( 'Error updating original filename:', error );
-		alert( 'Error updating original filename: ' + error.message );
-		element.textContent = originalValue;
-	}
-}
-
-/** Reset filename to original */
-export async function resetFilename() {
-
-	// Get filename element and original filename from AppState
-	const filenameElement = document.querySelector( '.editable-filename' );
-	if( !filenameElement ) {
-		alert( 'Filename element not found' );
-		return;
-	}
-	const originalFilename = filenameElement.getAttribute( 'data-original-filename' );
-	if( !originalFilename ) {
-		alert( 'Original filename not available' );
-		return;
-	}
-
-	//
-	let resetFilenameValue = stripKnownExtension( originalFilename, originalFilename );
-
-	const currentName = stripKnownExtension( filenameElement.textContent, originalFilename );
-
-	if( currentName === resetFilenameValue ) {
-		alert( 'Filename is already set to the original' );
-		return;
-	}
-
-	if( !confirm( `Reset filename from "${currentName}" to "${resetFilenameValue}"?` ) ) {
-		return;
-	}
-
-	filenameElement.textContent = resetFilenameValue;
-	await saveFilename( filenameElement, { allowMissingFile: true } );
 }

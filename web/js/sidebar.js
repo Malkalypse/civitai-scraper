@@ -1,8 +1,7 @@
-/*
-  Sidebar management:
-    loading folder/file libraries,
-    building lists,
-    handling clicks
+/* Sidebar management:
+  - Loading folder/file libraries
+  - Building lists
+  - Handling clicks
 */
 
 
@@ -10,7 +9,6 @@ import { escapeHtml } from './dom-utils.js'; // safely escape folder and file na
 import { AppState } from './app-context.js'; // current model/version info
 
 
-// Global variable
 let modelClickHandler = null;
 
 
@@ -170,7 +168,6 @@ export function attachSidebarEventHandlers( container ) {
   // Mark event handlers as bound
   container.dataset.eventsBound = '1';
 }
-
 /** Toggle visibility of a folder's file list in the sidebar
  * @param {HTMLElement} element clicked folder name element that contains the triangle and text
  */
@@ -186,6 +183,7 @@ export function toggleFolder( element ) {
     triangle.style.transform  = 'rotate(0deg)';
   }
 }
+
 
 /** Toggle the active state of a tag in the sidebar
  * @param {HTMLElement} element the clicked tag element
@@ -204,7 +202,6 @@ export function toggleTag( element ) {
   console.log( 'Active tags:', Array.from( AppState.filters.activeTags ) );
   updateSidebarHighlighting();
 }
-
 /** Update sidebar file highlighting based on currently active tags */
 export async function updateSidebarHighlighting() {
 

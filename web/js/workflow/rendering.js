@@ -1,58 +1,38 @@
 import { AppState } from '../app-context.js';
+import { copyTextWithFallback } from '../dom-utils.js';
 
-export async function copyTextWithFallback( text ) {
-	const value = typeof text === 'string' ? text : String( text ?? '' );
-	if( value.trim() === '' ) {
-		return false;
-	}
+export { copyTextWithFallback } from '../dom-utils.js';
 
-	if( navigator.clipboard && typeof navigator.clipboard.writeText === 'function' ) {
-		try {
-			await navigator.clipboard.writeText( value );
-			return true;
-		} catch( error ) {
-			console.warn( 'Clipboard API write failed, trying fallback:', error );
-		}
-	}
 
-	try {
-		const textarea = document.createElement( 'textarea' );
-		textarea.value = value;
-		textarea.setAttribute( 'readonly', '' );
-		textarea.style.position = 'fixed';
-		textarea.style.left = '-9999px';
-		textarea.style.top = '0';
-		document.body.appendChild( textarea );
-		textarea.focus();
-		textarea.select();
-		textarea.setSelectionRange( 0, textarea.value.length );
-		const copied = document.execCommand( 'copy' );
-		document.body.removeChild( textarea );
-		return copied === true;
-	} catch( error ) {
-		console.warn( 'Fallback copy failed:', error );
-		return false;
-	}
-}
-
+/** Render workflow analysis data for a given image, including nodes, links, and metadata, with interactive elements for navigation and JSON export
+ * @param {number|string} imageId ID of the image the workflow analysis corresponds to, used in the section title
+ * @param {Object} analysisData structured workflow analysis data containing nodes, links, workflowId, and workflowRevision
+ * @param {Object} nodePortDefinitions definitions for node ports, used to label inputs, widgets, and outputs
+ * @param {Object} options additional options for rendering, including:
+ * - keepParametersVisible (boolean): whether to keep the parameters section visible when rendering workflow analysis
+ * - scrollToSection (boolean): whether to scroll to the workflow analysis section after rendering
+ * - exportableWorkflowJsonText (string): JSON text of the workflow for export
+ */
 export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitions = {}, options = {} ) {
-	const keepParametersVisible = options?.keepParametersVisible === true;
-	const scrollToSection = options?.scrollToSection !== false;
-	const exportableWorkflowJsonText = String( options?.exportableWorkflowJsonText || '' ).trim();
 
-	const parametersSection = document.getElementById( 'parametersAnalysisSection' );
+	const keepParametersVisible				= options?.keepParametersVisible === true;
+	const scrollToSection							= options?.scrollToSection !== false;
+	const exportableWorkflowJsonText	= String( options?.exportableWorkflowJsonText || '' ).trim();
+	const parametersSection						= document.getElementById( 'parametersAnalysisSection' );
+
 	if( parametersSection && !keepParametersVisible ) {
 		parametersSection.style.display = 'none';
 	}
 
-	const section = document.getElementById( 'workflowAnalysisSection' );
-	const title = document.getElementById( 'workflowAnalysisTitle' );
-	const linksToggleBtn = document.getElementById( 'workflowToggleLinksBtn' );
-	const textToggleBtn = document.getElementById( 'workflowToggleTextBtn' );
-	const nodeList = document.getElementById( 'workflowAnalysisNodeList' );
-	const outputJsonControls = document.getElementById( 'workflowJsonExportControls' );
-	const outputJsonBtn = document.getElementById( 'workflowOutputJsonBtn' );
-	const outputJsonStatus = document.getElementById( 'workflowOutputJsonStatus' );
+	// Define element references
+	const section							= document.getElementById( 'workflowAnalysisSection' );
+	const title								= document.getElementById( 'workflowAnalysisTitle' );
+	const linksToggleBtn			= document.getElementById( 'workflowToggleLinksBtn' );
+	const textToggleBtn				= document.getElementById( 'workflowToggleTextBtn' );
+	const nodeList						= document.getElementById( 'workflowAnalysisNodeList' );
+	const outputJsonControls	= document.getElementById( 'workflowJsonExportControls' );
+	const outputJsonBtn				= document.getElementById( 'workflowOutputJsonBtn' );
+	const outputJsonStatus		= document.getElementById( 'workflowOutputJsonStatus' );
 
 	if( !section || !title || !nodeList ) {
 		return;
@@ -66,8 +46,10 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		outputJsonStatus.textContent = '';
 	}
 
+	// Set up event handler for exporting workflow JSON
 	if( outputJsonBtn ) {
 		outputJsonBtn.disabled = exportableWorkflowJsonText === '';
+
 		outputJsonBtn.onclick = async () => {
 			if( exportableWorkflowJsonText === '' ) {
 				return;
@@ -105,41 +87,41 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 	title.textContent = `Workflow Analysis (Image ${imageId})`;
 	nodeList.innerHTML = '';
 
-	const nodes = Array.isArray( analysisData?.nodes ) ? analysisData.nodes : [];
-	const links = Array.isArray( analysisData?.links ) ? analysisData.links : [];
-	const workflowId = analysisData?.workflowId ?? null;
-	const workflowRevision = analysisData?.workflowRevision ?? null;
+	const nodes							= Array.isArray( analysisData?.nodes ) ? analysisData.nodes : [];
+	const links							= Array.isArray( analysisData?.links ) ? analysisData.links : [];
+	const workflowId				= analysisData?.workflowId ?? null;
+	const workflowRevision	= analysisData?.workflowRevision ?? null;
 
 	if( workflowId !== null || workflowRevision !== null ) {
-		const metaDiv = document.createElement( 'div' );
-		metaDiv.style.cssText = 'font-size: 12px; color: #adb5bd; margin-bottom: 8px; padding: 6px 8px; background: #25262b; border-radius: 4px; border: 1px solid #373a40;';
+		const metaDiv					= document.createElement( 'div' );
+		metaDiv.style.cssText	= 'font-size: 12px; color: #adb5bd; margin-bottom: 8px; padding: 6px 8px; background: #25262b; border-radius: 4px; border: 1px solid #373a40;';
 
 		if( workflowId !== null ) {
-			const idLine = document.createElement( 'div' );
-			idLine.style.fontWeight = '700';
-			idLine.textContent = String( workflowId );
+			const idLine						= document.createElement( 'div' );
+			idLine.style.fontWeight	= '700';
+			idLine.textContent			= String( workflowId );
 			metaDiv.appendChild( idLine );
 		}
 
 		if( workflowRevision !== null ) {
-			const revisionLine = document.createElement( 'div' );
-			revisionLine.textContent = `Version: ${workflowRevision}`;
+			const revisionLine				= document.createElement( 'div' );
+			revisionLine.textContent	= `Version: ${workflowRevision}`;
 			metaDiv.appendChild( revisionLine );
 		}
 
 		nodeList.appendChild( metaDiv );
 	}
 
-	const typeOrder = { input: 0, widget: 1, output: 2 };
-	const sectionTitles = { input: 'Inputs', widget: 'Widgets', output: 'Outputs' };
-	const nodesById = new Map();
-	const nodeCardById = new Map();
-	const sectionRenderEntries = [];
-	const inputCellByNodePort = new Map();
-	const widgetCellByNodePort = new Map();
-	const outputCellByNodePort = new Map();
-	const connectionSignaturesByCell = new WeakMap();
-	const processedLinkEdges = new Set();
+	const typeOrder										= { input: 0, widget: 1, output: 2 };
+	const sectionTitles								= { input: 'Inputs', widget: 'Widgets', output: 'Outputs' };
+	const nodesById										= new Map();
+	const nodeCardById								= new Map();
+	const sectionRenderEntries				= [];
+	const inputCellByNodePort					= new Map();
+	const widgetCellByNodePort				= new Map();
+	const outputCellByNodePort				= new Map();
+	const connectionSignaturesByCell	= new WeakMap();
+	const processedLinkEdges					= new Set();
 
 	nodes.forEach( node => {
 		const id = Number( node?.id );
@@ -148,6 +130,12 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}
 	} );
 
+	/** Helper to get port label from definitions, with fallback to 'Unknown' if not found
+	 * @param {string} nodeType 
+	 * @param {string} portType 
+	 * @param {number} portIndex 
+	 * @returns {string}
+	 */
 	const getPortLabel = ( nodeType, portType, portIndex ) => {
 		const definition = nodePortDefinitions[ nodeType ];
 		const ports = Array.isArray( definition?.ports ) ? definition.ports : [];
@@ -161,6 +149,9 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		return label || 'Unknown';
 	};
 
+	/** Ensure that a cell has the necessary wrappers for masking and connection lists, creating them if they don't exist
+	 * @param {HTMLElement} valueCell the cell element to ensure wrappers for
+	 */
 	const ensureMaskedCellWrappers = ( valueCell ) => {
 		if( !valueCell || valueCell.dataset.maskReady === '1' ) {
 			return;
@@ -187,6 +178,10 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		valueCell.dataset.maskReady = '1';
 	};
 
+	/** Set the masked state of a cell, showing or hiding the mask and content accordingly
+	 * @param {HTMLElement} valueCell the cell element to set masked state for
+	 * @param {boolean} masked whether the cell should be masked (true) or unmasked (false)
+	 */
 	const setCellMasked = ( valueCell, masked ) => {
 		ensureMaskedCellWrappers( valueCell );
 		const mask = valueCell ? valueCell.querySelector( '.workflow-cell-mask' ) : null;
@@ -202,6 +197,9 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}
 	};
 
+	/** Focus a workflow node card by its ID, applying temporary highlight styles and scrolling it into view
+	 * @param {number} nodeId the ID of the node to focus
+	 */
 	const focusWorkflowNodeCard = ( nodeId ) => {
 		nodeCardById.forEach( card => {
 			card.style.outline = '';
@@ -223,6 +221,11 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}, 1800 );
 	};
 
+	/** Append a connection line element to a cell for a given link, ensuring no duplicate connections are added
+	 * @param {HTMLElement} cell the cell element to append the connection line to
+	 * @param {string} lineText the text to display on the connection button
+	 * @param {number} referencedNodeId the ID of the node that this connection references, used for navigation on click
+	 */
 	const appendConnectionLine = ( cell, lineText, referencedNodeId ) => {
 		if( !cell ) {
 			return;
@@ -270,6 +273,12 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		list.appendChild( line );
 	};
 
+	/** Resolve the target slot of a link to determine if it corresponds to a defined input or widget port, returning the appropriate label and display information for rendering
+	 * @param {*} targetNode The target node object that the link is connected to 
+	 * @param {*} nodeType The type of the target node
+	 * @param {*} targetSlot The index of the target slot
+	 * @returns {Object} An object containing the resolved port type, index, label, and display suffix
+	 */
 	const resolveCombinedTargetSlot = ( targetNode, nodeType, targetSlot ) => {
 		const runtimeInputs = Array.isArray( targetNode?.inputs ) ? targetNode.inputs : [];
 		const runtimeInput = runtimeInputs[ targetSlot ];
@@ -363,6 +372,10 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		};
 	};
 
+	/** Format a number value to a string with fixed precision, or return it as-is if it's not a finite number
+	 * @param {*} numberValue value to format, expected to be a number but will be returned as a string if it's not finite
+	 * @returns {string} formatted number as a string, or original value as a string if it's not a finite number
+	 */
 	const formatNumberValue = ( numberValue ) => {
 		if( !Number.isFinite( numberValue ) ) {
 			return String( numberValue );
@@ -371,6 +384,10 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		return String( Number( numberValue.toFixed( 2 ) ) );
 	};
 
+	/** Normalize numeric values in an object or array to a fixed precision, while leaving non-numeric values unchanged. This is used to create a consistent text representation of workflow shape for hashing and comparison, excluding variable widget values.
+	 * @param {*} value value to normalize, can be a number, array, or object
+	 * @returns {*} normalized value with numeric values rounded to fixed precision
+	 */
 	const normalizeNumericPrecision = ( value ) => {
 		if( typeof value === 'number' ) {
 			if( Number.isFinite( value ) ) {
@@ -395,6 +412,10 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		return value;
 	};
 
+	/** Format a widget value to a string for display, normalizing numeric values to fixed precision and stringifying objects as JSON, while leaving non-numeric primitive values as strings
+	 * @param {*} value the widget value to format, can be of any type
+	 * @returns {string} formatted string representation of the widget value
+	 */
 	const formatWidgetValue = ( value ) => {
 		if( value === null || typeof value === 'undefined' ) {
 			return '';
@@ -417,6 +438,11 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 
 	const normalizePortName = ( value ) => String( value || '' ).trim().toLowerCase();
 
+	/** Check if a widget port is linked to a node
+	 * @param {Object} node					node to check
+	 * @param {string} widgetLabel	label of widget port
+	 * @returns {boolean} true if widget port is linked, otherwise false
+	 */
 	const isWidgetPortLinked = ( node, widgetLabel ) => {
 		const widgetLabelNormalized = normalizePortName( widgetLabel );
 		if( !widgetLabelNormalized ) {
@@ -435,6 +461,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		} );
 	};
 
+	// Render nodes of workflow analysis, creating DOM elements for each node and its ports, and appending to node list container
 	nodes.forEach( node => {
 		const nodeType = typeof node?.type === 'string' && node.type.trim() ? node.type : 'Unknown';
 		const nodeIdNumber = Number( node?.id );
@@ -545,6 +572,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		nodeList.appendChild( item );
 	} );
 
+	// Render links between nodes, creating connection line elements for each link and appending them to the appropriate cells, while ensuring no duplicate connections are created and handling combined input/widget slots based on runtime information and definitions
 	links.forEach( link => {
 		if( !Array.isArray( link ) || link.length < 5 ) {
 			return;
@@ -591,6 +619,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}
 	} );
 
+	// Apply initial visibility of sections and rows based on whether they have values, and set up toggle buttons for showing/hiding links and text values
 	sectionRenderEntries.forEach( sectionEntry => {
 		const { labelEl, tableEl } = sectionEntry;
 		const rows = tableEl.querySelectorAll( 'tr' );
@@ -616,6 +645,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}
 	} );
 
+	/** Apply visibility of link sections and node cards based on current state of workflowLinksHidden, and update the toggle button text accordingly */
 	const applyLinksVisibility = () => {
 		sectionRenderEntries.forEach( sectionEntry => {
 			const isLinkSection = sectionEntry.sectionType === 'input' || sectionEntry.sectionType === 'output';
@@ -640,6 +670,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}
 	};
 
+	/** Apply visibility of text values in cells based on current state of workflowTextHidden, showing or hiding the mask and content accordingly, and update the toggle button text */
 	const applyTextVisibility = () => {
 		sectionRenderEntries.forEach( sectionEntry => {
 			const rows = sectionEntry.tableEl.querySelectorAll( 'tr' );
@@ -669,6 +700,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		}
 	};
 
+	// Set up toggle buttons for showing/hiding links and text values, and apply initial visibility based on current state
 	if( linksToggleBtn ) {
 		linksToggleBtn.onclick = () => {
 			AppState.workflow.workflowLinksHidden = !AppState.workflow.workflowLinksHidden;
@@ -676,6 +708,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		};
 	}
 
+	// Set up toggle button for showing/hiding text values, and apply initial visibility based on current state
 	if( textToggleBtn ) {
 		textToggleBtn.onclick = () => {
 			AppState.workflow.workflowTextHidden = !AppState.workflow.workflowTextHidden;
@@ -683,8 +716,8 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 		};
 	}
 
-	applyLinksVisibility();
-	applyTextVisibility();
+	applyLinksVisibility(); // apply initial visibility of link sections and node cards based on current state
+	applyTextVisibility(); // apply initial visibility of text values in cells based on current state
 
 	section.style.display = 'block';
 	if( scrollToSection ) {

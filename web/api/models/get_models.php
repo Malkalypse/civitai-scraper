@@ -1,6 +1,5 @@
 <?php
-/**
- * Get Models Folder Structure
+/** Get Models Folder Structure
  *
  * - Returns folder and file structure for models, optionally filtered by type.
  */
@@ -9,8 +8,8 @@ header( 'Content-Type: application/json' );
 require_once __DIR__ . '/../../prefs.php';
 
 /** Collect existing file and folder names in a directory
- * @param string $basePath the base directory to scan
- * @return array an associative array of lowercase names for quick lookup
+ * @param string $basePath The base directory to scan
+ * @return array Associative array of lowercase names for quick lookup
  */
 function collectExistingFileNames( $basePath ) {
 	$names = [];
@@ -161,17 +160,17 @@ try {
 	$folderMap = [];
 
 	while( $row = $result->fetch_assoc() ) {
-		$folderName = $row['base_model'] ?: 'Unknown';
-		$rawFileName = (string)$row['filename'];
-		$originalFileName = isset( $row['original_filename'] ) ? (string)$row['original_filename'] : '';
-		$fileName = pathinfo($rawFileName, PATHINFO_FILENAME);
+		$folderName				= $row['base_model'] ?: 'Unknown';
+		$rawFileName			= ( string )$row['filename'];
+		$originalFileName = isset( $row['original_filename'] ) ? ( string )$row['original_filename'] : '';
+		$fileName					= pathinfo( $rawFileName, PATHINFO_FILENAME );
 
 		$exists = true;
 		if( $typeFolderPath ) {
-			$rawFileExt = strtolower( pathinfo( $rawFileName, PATHINFO_EXTENSION ) );
-			$originalFileExt = strtolower( pathinfo( $originalFileName, PATHINFO_EXTENSION ) );
-			$effectiveExt = $rawFileExt !== '' ? $rawFileExt : $originalFileExt;
-			$lookupBucket = 'checkpoint';
+			$rawFileExt				= strtolower( pathinfo( $rawFileName, PATHINFO_EXTENSION ) );
+			$originalFileExt	= strtolower( pathinfo( $originalFileName, PATHINFO_EXTENSION ) );
+			$effectiveExt			= $rawFileExt !== '' ? $rawFileExt : $originalFileExt;
+			$lookupBucket			= 'checkpoint';
 			if( strtoupper( $type ) === 'LORA' ) {
 				$lookupBucket = 'lora';
 			} elseif( strtoupper( $type ) === 'CHECKPOINT' && $effectiveExt === 'gguf' ) {
@@ -183,12 +182,12 @@ try {
 				?? [];
 
 			$candidateKeys = [
-				strtolower($rawFileName),
-				strtolower(pathinfo($rawFileName, PATHINFO_FILENAME)),
-				strtolower($fileName),
-				strtolower($fileName . '.gguf'),
-				strtolower($fileName . '.safetensors'),
-				strtolower($fileName . '.zip')
+				strtolower( $rawFileName ),
+				strtolower( pathinfo( $rawFileName, PATHINFO_FILENAME ) ),
+				strtolower( $fileName ),
+				strtolower( $fileName . '.gguf' ),
+				strtolower( $fileName . '.safetensors' ),
+				strtolower( $fileName . '.zip' )
 			];
 
 			if( $originalFileName !== '' ) {
@@ -197,56 +196,56 @@ try {
 			}
 
 			$exists = false;
-			foreach ($candidateKeys as $key) {
-				if ($key !== '' && isset($existingFileNames[$key])) {
+			foreach( $candidateKeys as $key ) {
+				if( $key !== '' && isset( $existingFileNames[$key] ) ) {
 					$exists = true;
 					break;
 				}
 			}
 		}
 
-		if (!isset($folderMap[$folderName])) {
+		if( !isset( $folderMap[$folderName] ) ) {
 			$folderMap[$folderName] = [];
 		}
 
 		$folderMap[$folderName][] = [
-			'name' => $fileName,
-			'modelId' => $row['model_id'],
-			'versionId' => $row['version_id'],
-			'exists' => $exists
+			'name'			=> $fileName,
+			'modelId'		=> $row['model_id'],
+			'versionId'	=> $row['version_id'],
+			'exists'		=> $exists
 		];
 	}
 
 	// Convert to structure format and sort
 	$structure = [];
-	foreach ($folderMap as $folderName => $files) {
-		usort($files, function ($a, $b) {
-			return strcasecmp($a['name'], $b['name']);
-		});
+	foreach( $folderMap as $folderName => $files ) {
+		usort( $files, function( $a, $b ) {
+			return strcasecmp( $a['name'], $b['name'] );
+		} );
 
 		$structure[] = [
-			'folder' => $folderName,
-			'files' => $files
+			'folder'	=> $folderName,
+			'files'		=> $files
 		];
 	}
 
-	usort($structure, function ($a, $b) {
-		return strcmp($a['folder'], $b['folder']);
-	});
+	usort( $structure, function( $a, $b ) {
+		return strcmp( $a['folder'], $b['folder'] );
+	} );
 
-	echo json_encode([
-		'success' => true,
-		'data' => $structure
-	]);
+	echo json_encode( [
+		'success'	=> true,
+		'data'		=> $structure
+	] );
 
 	$stmt->close();
 	$conn->close();
-} catch (Exception $e) {
-	if (isset($stmt) && $stmt instanceof mysqli_stmt) {
+} catch( Exception $e ) {
+	if( isset( $stmt ) && $stmt instanceof mysqli_stmt ) {
 		$stmt->close();
 	}
-	if (isset($conn)) {
+	if( isset( $conn ) ) {
 		$conn->close();
 	}
-	echo json_encode(['error' => 'Exception: ' . $e->getMessage()]);
+	echo json_encode( ['error' => 'Exception: ' . $e->getMessage()] );
 }

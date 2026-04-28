@@ -48,6 +48,7 @@ export async function copyImageWorkflow( button ) {
 	}
 }
 
+
 /** Extract workflow/parameters for an image card and render analysis UI
  * @param {HTMLElement|null} button trigger element with image dataset metadata
  */
@@ -70,6 +71,7 @@ export async function analyzeImageWorkflow( button ) {
 		button.textContent = originalText;
 	}
 }
+
 
 /** Re-scan workflow metadata for single image card
  * @param {HTMLElement|null} noWorkflowButton retry button 
@@ -180,7 +182,6 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 	alert( `${modeLabel} Scanned: ${scanned}, Updated: ${processed}, Skipped: ${skipped}, Errors: ${failures}` );
 }
 
-
 /** Collect one workflow action button per unique image id from current DOM
  * @returns {HTMLElement[]} Workflow action elements
  */
@@ -201,6 +202,7 @@ function collectUniqueWorkflowButtons() {
 
 	return Array.from( uniqueByImageId.values() );
 }
+
 /** Fetch cached workflow state metadata for image id from backend
  * @param {number} imageId Image id to query
  * @returns {Promise<{hasWorkflowEntry: boolean, workflowNull: boolean, workflowHash: string, parametersPresent: boolean, parametersHash: string}>}
@@ -225,8 +227,6 @@ async function fetchCachedWorkflowEntryState( imageId ) {
 		parametersHash: typeof result.parametersHash === 'string' ? result.parametersHash : ''
 	};
 }
-
-
 /** Persist missing-workflow state and update all matching card UIs when applicable
  * @param {HTMLElement|null}	referenceElement	element carrying image dataset metadata
  * @param {string}						imageFilename			best-effort source filename for persistence
@@ -381,6 +381,17 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 		workflowHash
 	};
 }
+
+/** Build  model filename with subfolder and extension for use in inferred workflows
+ * @param {string|null} filename  bare filename from AppState (may or may not have extension)
+ * @param {string|null} subfolder base model subfolder from AppState (e.g. "Flux.1 D")
+ * @returns {string}
+ */
+function buildModelFilenameForWorkflow( filename, subfolder ) {
+	if( !filename ) return '';
+	const withExt = /\.[a-z0-9]+$/i.test( filename ) ? filename : `${filename}.safetensors`;
+	return subfolder ? `${subfolder}\\${withExt}` : withExt;
+}
 /** Retrieve workflow extraction payload for image, with fallback to A1111 parameters
  * @param {number} imageId			image id for backend lookup and fallback calls
  * @param {string} imagePageUrl	image page URL candidate
@@ -510,17 +521,6 @@ export async function fetchImageWorkflowData( imageId, imagePageUrl, fullImageUr
 
 	return result;
 }
-/** Build  model filename with subfolder and extension for use in inferred workflows
- * @param {string|null} filename  bare filename from AppState (may or may not have extension)
- * @param {string|null} subfolder base model subfolder from AppState (e.g. "Flux.1 D")
- * @returns {string}
- */
-function buildModelFilenameForWorkflow( filename, subfolder ) {
-	if( !filename ) return '';
-	const withExt = /\.[a-z0-9]+$/i.test( filename ) ? filename : `${filename}.safetensors`;
-	return subfolder ? `${subfolder}\\${withExt}` : withExt;
-}
-
 /** Persist workflow-present state for an image and update local cached flags
  * @param {number} imageId						image id to update
  * @param {string} [imageFilename='']	optional source filename for storage
@@ -692,6 +692,7 @@ function applyWorkflowUiToAllCardsForImageId( imageId, workflowState, parameters
 		}
 	} );
 }
+
 /** Apply "workflow present" visuals/state to a single card
  * @param {HTMLElement|null}			referenceElement	element inside the card
  * @param {HTMLInputElement|null}	favoriteCheckbox	card favorite checkbox, if present
@@ -723,6 +724,7 @@ function applyPresentWorkflowUi( referenceElement, favoriteCheckbox ) {
 
 	applyImageCardFilters();
 }
+
 /** Apply "parameters only" visuals/state to a single card
  * @param {HTMLElement|null}			referenceElement			element inside the card
  * @param {HTMLInputElement|null}	favoriteCheckbox			card favorite checkbox, if present
@@ -757,6 +759,7 @@ function applyParametersWorkflowUi( referenceElement, favoriteCheckbox, paramete
 
 	applyImageCardFilters();
 }
+
 /** Apply "missing workflow" visuals/state to a single card
  * @param {HTMLElement|null}			referenceElement	element inside the card
  * @param {HTMLInputElement|null} favoriteCheckbox	card favorite checkbox, if present	

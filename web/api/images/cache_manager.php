@@ -1,60 +1,66 @@
 <?php
-/**
- * Cache Manager
+/** Cache Manager
  * 
  * Handles cache size calculation and clearing
  */
 
-header('Content-Type: application/json');
+header( 'Content-Type: application/json' );
 
-$input = json_decode(file_get_contents('php://input'), true);
-$action = $input['action'] ?? null;
-$modelId = $input['modelId'] ?? null;
+$input    = json_decode( file_get_contents( 'php://input' ), true );
+$action   = $input['action'] ?? null;
+$modelId  = $input['modelId'] ?? null;
 
-$cacheDir = __DIR__ . '/../../cache/images';
-$generationDir = __DIR__ . '/../../cache/image_generation';
+$cacheDir       = __DIR__ . '/../../cache/images';
+$generationDir  = __DIR__ . '/../../cache/image_generation';
 
 // Create cache directory if it doesn't exist
-if (!file_exists($cacheDir)) {
-  mkdir($cacheDir, 0755, true);
+if( !file_exists( $cacheDir ) ) {
+  mkdir( $cacheDir, 0755, true );
 }
-if (!file_exists($generationDir)) {
-  mkdir($generationDir, 0755, true);
+if( !file_exists( $generationDir ) ) {
+  mkdir( $generationDir, 0755, true );
 }
 
-function loadGenerationMetadataByModel($generationDir, $targetModelId = null) {
-  $byModel = [];
-  $modelScoped = [];
+/** Load generation metadata by model.
+ * @param mixed $generationDir Path to generation metadata directory
+ * @param mixed $targetModelId Optional model ID to filter results for
+ * @return mixed Array with two elements:
+ * - [0] => associative array of modelId => [filename => true]
+ * - [1] => array of metadata entries for target model (if specified)
+ */
+function loadGenerationMetadataByModel( $generationDir, $targetModelId = null ) {
+  $byModel      = [];
+  $modelScoped  = [];
 
-  $files = glob($generationDir . '/*.json');
-  foreach ($files as $file) {
-    if (!is_file($file)) {
+  $files = glob( $generationDir . '/*.json' );
+  foreach( $files as $file) {
+    if( !is_file( $file ) ) {
       continue;
     }
 
-    $raw = @file_get_contents($file);
-    if ($raw === false) {
+    $raw = @file_get_contents( $file );
+    if( $raw === false ) {
       continue;
     }
 
-    $row = json_decode($raw, true);
-    if (!is_array($row)) {
+    $row = json_decode( $raw, true );
+    if( !is_array( $row ) ) {
       continue;
     }
 
-    $filename = isset($row['imageFilename']) ? trim((string)$row['imageFilename']) : '';
-    $storedModelId = isset($row['modelId']) ? (string)$row['modelId'] : '';
+    $filename       = isset( $row['imageFilename'] ) ? trim( ( string )$row['imageFilename'] ) : '';
+    $storedModelId  = isset( $row['modelId'] ) ? ( string )$row['modelId'] : '';
 
-    if ($filename !== '' && $storedModelId !== '') {
-      if (!isset($byModel[$storedModelId])) {
+    if( $filename !== '' && $storedModelId !== '' ) {
+      if( !isset( $byModel[$storedModelId] ) ) {
         $byModel[$storedModelId] = [];
       }
       $byModel[$storedModelId][$filename] = true;
     }
 
-    if ($targetModelId !== null && $targetModelId !== '' && $storedModelId === (string)$targetModelId) {
+    if( $targetModelId !== null && $targetModelId !== '' && $storedModelId === ( string )$targetModelId ) {
       $modelScoped[] = [
-        'path' => $file,
+        'path'          => $file,
         'imageFilename' => $filename
       ];
     }
@@ -63,144 +69,148 @@ function loadGenerationMetadataByModel($generationDir, $targetModelId = null) {
   return [$byModel, $modelScoped];
 }
 
-function getFileSizeBytes($path) {
-  if (!is_string($path) || !is_file($path)) {
+/** Get file size in bytes, returning 0 for invalid paths
+ * @param mixed $path File path to check
+ * @return int File size in bytes (or 0 if invalid)
+ */
+function getFileSizeBytes( $path ) {
+  if( !is_string( $path ) || !is_file( $path ) ) {
     return 0;
   }
 
-  $size = @filesize($path);
-  return is_numeric($size) ? (int)$size : 0;
+  $size = @filesize( $path );
+  return is_numeric( $size ) ? ( int )$size : 0;
 }
 
-switch ($action) {
+switch( $action ) {
   case 'getSize':
     // Calculate total cache size
     $totalSize = 0;
     $modelSize = 0;
     $fileCount = 0;
 
-    [$metadataByModel] = loadGenerationMetadataByModel($generationDir, null);
+    [$metadataByModel] = loadGenerationMetadataByModel( $generationDir, null );
     $modelFilenames = [];
-    if ($modelId !== null && $modelId !== '') {
-      $modelFilenames = isset($metadataByModel[(string)$modelId])
-        ? $metadataByModel[(string)$modelId]
+    if( $modelId !== null && $modelId !== '' ) {
+      $modelFilenames = isset( $metadataByModel[( string )$modelId] )
+        ? $metadataByModel[( string )$modelId]
         : [];
     }
     
-    $files = glob($cacheDir . '/*');
-    foreach ($files as $file) {
-      if (is_file($file) && strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'json') {
-        $fileSize = getFileSizeBytes($file);
+    $files = glob( $cacheDir . '/*' );
+    foreach( $files as $file ) {
+      if( is_file( $file ) && strtolower( pathinfo( $file, PATHINFO_EXTENSION ) ) !== 'json' ) {
+        $fileSize = getFileSizeBytes( $file );
         $totalSize += $fileSize;
         $fileCount++;
         
         // Check if this file belongs to the current model
-        $filename = basename($file);
-        if ($modelId && isset($modelFilenames[$filename])) {
+        $filename = basename( $file );
+        if( $modelId && isset( $modelFilenames[$filename] ) ) {
           $modelSize += $fileSize;
         }
       }
     }
     
-    echo json_encode([
-      'totalSize' => $totalSize,
-      'totalSizeMB' => round($totalSize / 1048576, 2),
-      'modelSize' => $modelSize,
-      'modelSizeMB' => round($modelSize / 1048576, 2),
-      'fileCount' => $fileCount
-    ]);
+    echo json_encode( [
+      'totalSize'   => $totalSize,
+      'totalSizeMB' => round( $totalSize / 1048576, 2 ),
+      'modelSize'   => $modelSize,
+      'modelSizeMB' => round( $modelSize / 1048576, 2 ),
+      'fileCount'   => $fileCount
+    ] );
     break;
     
   case 'clearModel':
-    if (!$modelId) {
-      echo json_encode(['error' => 'No model ID provided']);
+    if( !$modelId ) {
+      echo json_encode( ['error' => 'No model ID provided'] );
       exit;
     }
     
-    $deletedImageCount = 0;
-    $deletedImageSize = 0;
+    $deletedImageCount    = 0;
+    $deletedImageSize     = 0;
     $deletedMetadataCount = 0;
-    $deletedMetadataSize = 0;
+    $deletedMetadataSize  = 0;
 
-    [, $modelEntries] = loadGenerationMetadataByModel($generationDir, $modelId);
+    [, $modelEntries] = loadGenerationMetadataByModel( $generationDir, $modelId );
 
     // Delete image files for this model from per-image metadata
-    foreach ($modelEntries as $entry) {
-      $imageFilename = isset($entry['imageFilename']) ? $entry['imageFilename'] : '';
-      if ($imageFilename !== '') {
+    foreach( $modelEntries as $entry ) {
+      $imageFilename = isset( $entry['imageFilename'] ) ? $entry['imageFilename'] : '';
+      if( $imageFilename !== '' ) {
         $filepath = $cacheDir . '/' . $imageFilename;
-        if (file_exists($filepath)) {
-          $deletedImageSize += getFileSizeBytes($filepath);
-          @unlink($filepath);
+        if( file_exists( $filepath ) ) {
+          $deletedImageSize += getFileSizeBytes( $filepath );
+          @unlink( $filepath );
           $deletedImageCount++;
         }
       }
 
-      if (isset($entry['path']) && is_file($entry['path'])) {
-        $deletedMetadataSize += getFileSizeBytes($entry['path']);
-        @unlink($entry['path']);
+      if( isset( $entry['path'] ) && is_file( $entry['path'] ) ) {
+        $deletedMetadataSize += getFileSizeBytes( $entry['path'] );
+        @unlink( $entry['path'] );
         $deletedMetadataCount++;
       }
     }
 
     $deletedCount = $deletedImageCount + $deletedMetadataCount;
-    $deletedSize = $deletedImageSize + $deletedMetadataSize;
+    $deletedSize  = $deletedImageSize + $deletedMetadataSize;
     
-    echo json_encode([
+    echo json_encode( [
       'success' => true,
-      'deletedCount' => $deletedCount,
-      'deletedSize' => $deletedSize,
-      'deletedSizeMB' => round($deletedSize / 1048576, 2),
-      'deletedImageCount' => $deletedImageCount,
-      'deletedImageSize' => $deletedImageSize,
-      'deletedImageSizeMB' => round($deletedImageSize / 1048576, 2),
-      'deletedMetadataCount' => $deletedMetadataCount,
-      'deletedMetadataSize' => $deletedMetadataSize,
-      'deletedMetadataSizeMB' => round($deletedMetadataSize / 1048576, 2)
-    ]);
+      'deletedCount'          => $deletedCount,
+      'deletedSize'           => $deletedSize,
+      'deletedSizeMB'         => round( $deletedSize / 1048576, 2 ),
+      'deletedImageCount'     => $deletedImageCount,
+      'deletedImageSize'      => $deletedImageSize,
+      'deletedImageSizeMB'    => round( $deletedImageSize / 1048576, 2 ),
+      'deletedMetadataCount'  => $deletedMetadataCount,
+      'deletedMetadataSize'   => $deletedMetadataSize,
+      'deletedMetadataSizeMB' => round( $deletedMetadataSize / 1048576, 2 )
+    ] );
     break;
     
   case 'clearAll':
-    $deletedImageCount = 0;
-    $deletedImageSize = 0;
+    $deletedImageCount    = 0;
+    $deletedImageSize     = 0;
     $deletedMetadataCount = 0;
-    $deletedMetadataSize = 0;
+    $deletedMetadataSize  = 0;
     
-    $files = glob($cacheDir . '/*');
-    foreach ($files as $file) {
-      if (is_file($file) && strtolower(pathinfo($file, PATHINFO_EXTENSION)) !== 'json') {
-        $deletedImageSize += getFileSizeBytes($file);
-        @unlink($file);
+    $files = glob( $cacheDir . '/*' );
+    foreach( $files as $file ) {
+      if( is_file( $file ) && strtolower( pathinfo( $file, PATHINFO_EXTENSION ) ) !== 'json' ) {
+        $deletedImageSize += getFileSizeBytes( $file );
+        @unlink( $file );
         $deletedImageCount++;
       }
     }
 
-    $generationFiles = glob($generationDir . '/*.json');
-    foreach ($generationFiles as $file) {
-      if (is_file($file)) {
-        $deletedMetadataSize += getFileSizeBytes($file);
-        @unlink($file);
+    $generationFiles = glob( $generationDir . '/*.json' );
+    foreach( $generationFiles as $file ) {
+      if( is_file( $file ) ) {
+        $deletedMetadataSize += getFileSizeBytes( $file );
+        @unlink( $file );
         $deletedMetadataCount++;
       }
     }
 
     $deletedCount = $deletedImageCount + $deletedMetadataCount;
-    $deletedSize = $deletedImageSize + $deletedMetadataSize;
+    $deletedSize  = $deletedImageSize + $deletedMetadataSize;
     
-    echo json_encode([
+    echo json_encode( [
       'success' => true,
-      'deletedCount' => $deletedCount,
-      'deletedSize' => $deletedSize,
-      'deletedSizeMB' => round($deletedSize / 1048576, 2),
-      'deletedImageCount' => $deletedImageCount,
-      'deletedImageSize' => $deletedImageSize,
-      'deletedImageSizeMB' => round($deletedImageSize / 1048576, 2),
-      'deletedMetadataCount' => $deletedMetadataCount,
-      'deletedMetadataSize' => $deletedMetadataSize,
-      'deletedMetadataSizeMB' => round($deletedMetadataSize / 1048576, 2)
-    ]);
+      'deletedCount'          => $deletedCount,
+      'deletedSize'           => $deletedSize,
+      'deletedSizeMB'         => round( $deletedSize / 1048576, 2 ),
+      'deletedImageCount'     => $deletedImageCount,
+      'deletedImageSize'      => $deletedImageSize,
+      'deletedImageSizeMB'    => round( $deletedImageSize / 1048576, 2 ),
+      'deletedMetadataCount'  => $deletedMetadataCount,
+      'deletedMetadataSize'   => $deletedMetadataSize,
+      'deletedMetadataSizeMB' => round( $deletedMetadataSize / 1048576, 2 )
+    ] );
     break;
     
   default:
-    echo json_encode(['error' => 'Invalid action']);
+    echo json_encode( ['error' => 'Invalid action'] );
 }

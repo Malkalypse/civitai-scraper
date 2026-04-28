@@ -1,6 +1,5 @@
 <?php
-/**
- * Civitai Data Fetcher
+/** Civitai Data Fetcher
  * 
  * Fetches the __NEXT_DATA__ JSON from a Civitai model page
  * Extracts model versions and tags
@@ -13,6 +12,10 @@ require_once __DIR__ . '/../../config/site.php';
 
 header( 'Content-Type: application/json' );
 
+/** Respond with an error message and exit
+ * @param string $message Error message to include in the response
+ * @return void Outputs JSON error response and terminates script execution
+ */
 function respondError( string $message ): void {
   echo json_encode( ['error' => $message] );
   exit;
@@ -31,7 +34,7 @@ function getModelInput() {
 
 /** Extract modelId from input string
  * @param string $modelInput Raw modelInput input
- * @return string modelId
+ * @return string Extracted modelId (digits only), or original input if no match
  */
 function getModelId( string $modelInput ): string {
   if ( preg_match( '/(?:models\/)?(\d+)/', $modelInput, $idMatch ) ) {
@@ -43,9 +46,9 @@ function getModelId( string $modelInput ): string {
 }
 
 /** Extract modelVersionId from input string if present
+ * - Expects input like: "12345?modelVersionId=678"
  * @param string $modelInput Raw modelInput input which may contain query parameters
  * @return int|null Extracted modelVersionId as integer (or null)
- * Expects input like: "12345?modelVersionId=678"
  */
 function getVersionId( string $modelInput ): ?int {
   global $debug;
@@ -65,8 +68,8 @@ function buildModelUrl( string $modelInput ): string {
 }
 
 /** Fetch the HTML content of a Civitai model page
- * @param string $url The URL to fetch
- * @return array An array with 'success' (bool), 'html' (string), and 'error' (string) keys
+ * @param string $url URL to fetch
+ * @return array Array with 'success' (bool), 'html' (string), and 'error' (string) keys
  */
 function fetchModelPageHtml( string $url ): array {
   $ch = curl_init();
@@ -111,10 +114,10 @@ function fetchModelPageHtml( string $url ): array {
 /** Extract the __NEXT_DATA__ JSON payload from HTML of Civitai model page
  * @param string $html HTML content of civitai model page
  * @return array Array with:
- *  'success'   (bool),
- *  'jsonData'  (string),
- *  'decoded'   (array), and
- *  'error'     (string) keys
+ * - 'success'   (bool),
+ * - 'jsonData'  (string),
+ * - 'decoded'   (array), and
+ * - 'error'     (string) keys
  */
 function extractNextData( string $html ): array {
 
@@ -179,8 +182,8 @@ function getModelTags( array $decoded ): array {
  * @param array     $modelVersions  Array of model versions
  * @param int|null  $versionId      Optional versionId to match against modelVersions
  * @return array Array with:
- *  `selectedVersion`         (array|null) and
- *  `versionSelectionMethod`  (string)
+ * - `selectedVersion`         (array|null) and
+ * - `versionSelectionMethod`  (string)
  */
 function selectModelVersion( array $modelVersions, ?int $versionId ): array {
   $selectedVersion        = null;
@@ -283,10 +286,10 @@ $debug = '';
 $modelInput = getModelInput();
 
 // Basic validation
-if ( !$modelInput ) {
+if( !$modelInput ) {
   respondError( 'No model ID provided' );
 }
-if ( !preg_match( '/\d+/', $modelInput ) ) {
+if( !preg_match( '/\d+/', $modelInput ) ) {
   respondError( 'Invalid model ID format' );
 }
 
@@ -297,12 +300,12 @@ try {
   $url        = buildModelUrl( $modelId );
 
   $fetchResult = fetchModelPageHtml( $url );
-  if ( !$fetchResult['success'] ) {
+  if( !$fetchResult['success'] ) {
     respondError( $fetchResult['error'] );
   }
 
   $nextDataResult = extractNextData( $fetchResult['html'] );
-  if ( !$nextDataResult['success'] ) {
+  if( !$nextDataResult['success'] ) {
     respondError( $nextDataResult['error'] );
   }
 
@@ -325,6 +328,6 @@ try {
       $decoded
     )
   );
-} catch ( Exception $e ) {
+} catch( Exception $e ) {
   echo json_encode( ['error' => 'Exception: ' . $e->getMessage()] );
 }

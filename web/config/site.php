@@ -1,6 +1,5 @@
 <?php
-/**
- * Site configuration shim.
+/** Site configuration shim.
  *
  * All site-specific constants (domains, API paths, CDN URLs, UI strings) are
  * defined in the project's central preferences file.  This file exists only

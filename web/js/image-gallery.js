@@ -4,6 +4,7 @@ import { checkCached, downloadAndCache, extractImageIdFromUrl, extractFilenameFr
 import { copyImageWorkflow, analyzeImageWorkflow, retrySingleImageWorkflowScan } from './workflow.js';
 import { escapeHtml } from './dom-utils.js';
 
+/** Initialize event handlers for the image gallery */
 function initializeImageGalleryEventHandlers() {
 	if( !output || initializeImageGalleryEventHandlers.initialized ) {
 		return;
@@ -44,6 +45,9 @@ function initializeImageGalleryEventHandlers() {
 	initializeImageGalleryEventHandlers.initialized = true;
 }
 
+/** Update the maximum width and height of all images and videos in the gallery and carousel to match the specified thumbnail size, and update the layout of generation preview textareas accordingly
+ * @param {number} size The new thumbnail size in pixels
+ */
 export function updateThumbnailSize( size ) {
 	AppState.ui.thumbnailSize = size;
 	localStorage.setItem( 'thumbnailSize', size );
@@ -72,6 +76,12 @@ export function updateThumbnailSize( size ) {
 	applyGenerationPreviewVisibility();
 }
 
+/** Load images for a specific model and version, updating the gallery and carousel
+ * @param {string} modelId The ID of the model to load images for
+ * @param {Object} selectedVersion The selected version object containing version details
+ * @param {string} imageLoadToken A token representing the current image load session, used to ensure that outdated requests do not update the UI
+ * @returns {Promise<void>} A promise that resolves when the images have been loaded
+ */
 export async function loadModelImages( modelId, selectedVersion, imageLoadToken = AppState.runtime.currentImageLoadToken ) {
 	const isStale = () => imageLoadToken !== AppState.runtime.currentImageLoadToken;
 	AppState.runtime.copyAllTextQueue = [];

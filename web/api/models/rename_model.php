@@ -1,6 +1,5 @@
 <?php
-/**
- * Rename Model File and Update Database
+/** Rename Model File and Update Database
  * 
  * Renames a physical model file and updates the database
  */
@@ -23,15 +22,15 @@ function buildRenameRequest( array $inputParams ): array {
 	);
 
 	return [
-		'oldFilename'					=> $normalized['oldFilename'],
-		'newFilename'					=> $normalized['newFilename'],
-		'extension'						=> $normalized['extension'],
-		'originalFilename'		=> $inputParams['originalFilename'],
-		'modelId'							=> $inputParams['modelId'],
-		'versionId'						=> $inputParams['versionId'],
-		'baseModel'						=> $inputParams['baseModel'],
-		'allowMissingFile'		=> $inputParams['allowMissingFile'],
-		'renameFolderMode'		=> determineRenameMode( $inputParams['originalFilename'] )
+		'oldFilename'				=> $normalized['oldFilename'],
+		'newFilename'				=> $normalized['newFilename'],
+		'extension'					=> $normalized['extension'],
+		'originalFilename'	=> $inputParams['originalFilename'],
+		'modelId'						=> $inputParams['modelId'],
+		'versionId'					=> $inputParams['versionId'],
+		'baseModel'					=> $inputParams['baseModel'],
+		'allowMissingFile'	=> $inputParams['allowMissingFile'],
+		'renameFolderMode'	=> determineRenameMode( $inputParams['originalFilename'] )
 	];
 }
 
@@ -112,14 +111,16 @@ function resolveModelPathContext( array $renameRequest ): array {
 	$debug .= "\n  candidateBasePaths: " . json_encode( $candidateBasePaths );
 
 	return [
-		'modelType' => $modelType,
-		'modelBasePath' => $modelBasePath,
-		'candidateBasePaths' => $candidateBasePaths,
-		'searchRoots' => $searchRoots
+		'modelType'						=> $modelType,
+		'modelBasePath'				=> $modelBasePath,
+		'candidateBasePaths'	=> $candidateBasePaths,
+		'searchRoots'					=> $searchRoots
 	];
 }
 
-/** Load model-path preferences and derive default search roots. */
+/** Load model-path preferences and derive default search roots
+ * @return array Loaded path preferences with resolved default base paths for model types
+*/
 function loadModelPathPrefs(): array {
 	$modelsRootPath	= web_models_root_path();
 	$lorasDir				= web_model_subdir( 'lora' );
@@ -184,9 +185,9 @@ function fetchModelType( ?int $modelId, ?int $versionId ): ?string {
 }
 
 /** Resolve the preferred storage subdirectory for a model type
- * @param string|null	$modelType				Model type string from database
+ * @param string|null	$modelType	Model type string from database
  * @param string|null	$extension	Resolved normalized extension for gguf special case
- * @param array				$pathPrefs				Loaded path preferences for directory resolution
+ * @param array				$pathPrefs	Loaded path preferences for directory resolution
  * @return string|null Resolved subdirectory name or null to use root models directory
 */
 function resolveTypeFolder(
@@ -298,6 +299,7 @@ function findFileOrDirectory( array $renameRequest, array $pathContext ): array 
 		$extension,
 		$scopedSubdir
 	);
+	
 	if( $renameTargets ) {
 		return $renameTargets;
 	}
@@ -308,7 +310,7 @@ function findFileOrDirectory( array $renameRequest, array $pathContext ): array 
 
 	$fileOrFolder	= $isFolderMode ? 'Folder' : 'File';
 	$searchName		= $isFolderMode ? $oldFilename : ( $oldFilename . $extension );
-	api_send_failure("$fileOrFolder not found for rename: $searchName", 404);
+	api_send_failure( "$fileOrFolder not found for rename: $searchName", 404 );
 }
 
 /** Update only the database filename when the file is intentionally missing
@@ -462,7 +464,7 @@ try {
 	}
 
 	// Rename the file or folder on disk
-	if ( !rename( $findResult['oldPath'], $findResult['newPath'] ) ) {
+	if( !rename( $findResult['oldPath'], $findResult['newPath'] ) ) {
 		api_send_failure( 'Failed to rename ' . ( $renameRequest['renameFolderMode'] ? 'folder' : 'file' ) . ' on disk', 500 );
 	}
 
@@ -470,14 +472,14 @@ try {
 	$dbResult = updateDatabaseFilename( $renameRequest, $findResult );
 
 	// Send response based on whether database was updated
-	if ( $dbResult['wasUpdated'] ) {
+	if( $dbResult['wasUpdated'] ) {
 		sendRenameResponse( 'rename_and_db_update', $renameRequest, $pathContext, $findResult, $dbResult['affectedRows'] );
 	} else {
 		sendRenameResponse( 'file_only', $renameRequest, $pathContext, $findResult );
 	}
 
 // Catch unexpected exceptions and return failure response
-} catch (Exception $e) {
+} catch( Exception $e ) {
 	api_send_failure( 'Exception: ' . $e->getMessage(), 500 );
 }
 

@@ -1,15 +1,10 @@
 import { AppState } from './app-context.js';
 
-export function setWorkflowAnalysisSectionVisible( isVisible ) {
-	AppState.workflow.workflowAnalysisSectionVisible = isVisible === true;
 
-	if( !AppState.workflow.workflowAnalysisSectionVisible && AppState.workflow.workflowVisibilityWaiters.length > 0 ) {
-		const waiters = AppState.workflow.workflowVisibilityWaiters.slice();
-		AppState.workflow.workflowVisibilityWaiters = [];
-		waiters.forEach( resolve => resolve() );
-	}
-}
-
+/** Wait for workflow analysis section to be hidden, returning a promise that resolves when it is hidden
+ * Useful for ensuring workflow analysis is not visible before performing actions that should only happen when it's hidden
+ * @returns {Promise} Promise that resolves when workflow analysis section is hidden
+ */
 export function waitForWorkflowSectionToBeHidden() {
 	if( !AppState.workflow.workflowAnalysisSectionVisible ) {
 		return Promise.resolve();
@@ -20,6 +15,11 @@ export function waitForWorkflowSectionToBeHidden() {
 	} );
 }
 
+
+/** Normalize raw parameter value by unescaping common escape sequences and trimming whitespace
+ * @param {string} value raw parameter value to normalize
+ * @returns {string} normalized parameter value
+ */
 export function setupWorkflowAnalysisVisibilityObserver() {
 	if( AppState.workflow.workflowVisibilityObserver ) {
 		AppState.workflow.workflowVisibilityObserver.disconnect();
@@ -56,30 +56,26 @@ export function setupWorkflowAnalysisVisibilityObserver() {
 		AppState.workflow.workflowVisibilityObserver.observe( parametersSection );
 	}
 }
+/** Set the visibility of the workflow analysis section
+ * @param {boolean} isVisible whether the workflow analysis section should be visible
+ */
+export function setWorkflowAnalysisSectionVisible( isVisible ) {
+	AppState.workflow.workflowAnalysisSectionVisible = isVisible === true;
 
-export function updateGenerationPreviewToggleButtons() {
-	const promptsBtn = document.getElementById( 'generationTogglePromptsBtn' );
-	const nonWorkflowBtn = document.getElementById( 'generationToggleNonWorkflowBtn' );
-	const nonFavoritesBtn = document.getElementById( 'generationToggleNonFavoritesBtn' );
-
-	if( promptsBtn ) {
-		promptsBtn.textContent = AppState.ui.generationPromptsHidden ? 'Show Prompts' : 'Hide Prompts';
-	}
-
-	if( nonWorkflowBtn ) {
-		nonWorkflowBtn.textContent = AppState.ui.hideNonWorkflowImages ? 'Show Non-Workflow' : 'Hide Non-Workflow';
-	}
-
-	if( nonFavoritesBtn ) {
-		nonFavoritesBtn.textContent = AppState.ui.hideNonFavoriteImages ? 'Show Non-Favorites' : 'Hide Non-Favorites';
+	if( !AppState.workflow.workflowAnalysisSectionVisible && AppState.workflow.workflowVisibilityWaiters.length > 0 ) {
+		const waiters = AppState.workflow.workflowVisibilityWaiters.slice();
+		AppState.workflow.workflowVisibilityWaiters = [];
+		waiters.forEach( resolve => resolve() );
 	}
 }
 
-export function buildWorkflowFilterKey( workflowHash ) {
-	const hash = workflowHash === null || workflowHash === undefined ? '' : String( workflowHash ).trim();
-	return hash;
-}
 
+/** Add a new node of the specified type to the workflow graph, using predefined templates for position, size, and inputs/outputs
+ * @param {object} graph workflow graph object to modify
+ * @param {string} type type of node to add, used to look up template
+ * @param {Array} widgetsValues optional array of widget values to set on the new node
+ * @returns {object} the newly added node
+ */
 export function applyWorkflowIdentityToCard( referenceElement, workflowHash = '' ) {
 	if( !referenceElement ) {
 		return;
@@ -94,48 +90,11 @@ export function applyWorkflowIdentityToCard( referenceElement, workflowHash = ''
 	card.dataset.workflowHash = hash;
 }
 
-export function renderWorkflowFilterButtons() {
-	const container = document.getElementById( 'workflowFilterButtons' );
-	if( !container ) {
-		return;
-	}
 
-	const options = [ { key: 'all', workflowHash: 'all', imageCount: 0 }, ...AppState.workflow.workflowFilterOptions ];
-	container.innerHTML = '';
-
-	options.forEach( option => {
-		const btn = document.createElement( 'button' );
-		btn.type = 'button';
-		btn.dataset.filterKey = option.key;
-		btn.style.padding = '4px 8px';
-		btn.style.border = '1px solid #444';
-		btn.style.borderRadius = '3px';
-		btn.style.cursor = 'pointer';
-		btn.style.fontSize = '11px';
-		btn.style.textAlign = 'left';
-
-		if( option.key === 'all' ) {
-			btn.textContent = 'All';
-		} else {
-			const shortHash = option.workflowHash.length > 12 ? `${option.workflowHash.slice( 0, 12 )}...` : option.workflowHash;
-			btn.textContent = option.imageCount > 0 ? `${shortHash} (${option.imageCount})` : shortHash;
-			btn.title = option.workflowHash;
-		}
-
-		const isActive = option.key === AppState.workflow.activeWorkflowFilterKey;
-		btn.style.background = isActive ? '#419f3f' : '#2a2a3e';
-		btn.style.color = '#fff';
-
-		btn.addEventListener( 'click', () => {
-			AppState.workflow.activeWorkflowFilterKey = option.key;
-			renderWorkflowFilterButtons();
-			applyImageCardFilters();
-		} );
-
-		container.appendChild( btn );
-	} );
-}
-
+/** Load available workflow filters for a given version from the server 
+ * @param {string} versionId ID of the version to load workflow filters for
+ * @returns {Promise} Promise that resolves when filters are loaded and UI is updated
+ */
 export async function loadVersionWorkflowFilters( versionId ) {
 	AppState.workflow.workflowFilterOptions = [];
 	AppState.workflow.activeWorkflowFilterKey = 'all';
@@ -202,6 +161,52 @@ export async function loadVersionWorkflowFilters( versionId ) {
 	}
 }
 
+
+/** Render workflow filter buttons based on available options */
+export function renderWorkflowFilterButtons() {
+	const container = document.getElementById( 'workflowFilterButtons' );
+	if( !container ) {
+		return;
+	}
+
+	const options = [ { key: 'all', workflowHash: 'all', imageCount: 0 }, ...AppState.workflow.workflowFilterOptions ];
+	container.innerHTML = '';
+
+	options.forEach( option => {
+		const btn = document.createElement( 'button' );
+		btn.type = 'button';
+		btn.dataset.filterKey = option.key;
+		btn.style.padding = '4px 8px';
+		btn.style.border = '1px solid #444';
+		btn.style.borderRadius = '3px';
+		btn.style.cursor = 'pointer';
+		btn.style.fontSize = '11px';
+		btn.style.textAlign = 'left';
+
+		if( option.key === 'all' ) {
+			btn.textContent = 'All';
+		} else {
+			const shortHash = option.workflowHash.length > 12 ? `${option.workflowHash.slice( 0, 12 )}...` : option.workflowHash;
+			btn.textContent = option.imageCount > 0 ? `${shortHash} (${option.imageCount})` : shortHash;
+			btn.title = option.workflowHash;
+		}
+
+		const isActive = option.key === AppState.workflow.activeWorkflowFilterKey;
+		btn.style.background = isActive ? '#419f3f' : '#2a2a3e';
+		btn.style.color = '#fff';
+
+		btn.addEventListener( 'click', () => {
+			AppState.workflow.activeWorkflowFilterKey = option.key;
+			renderWorkflowFilterButtons();
+			applyImageCardFilters();
+		} );
+
+		container.appendChild( btn );
+	} );
+}
+
+
+/** Show or hide image cards based on active filter criteria */
 export function applyImageCardFilters() {
 	document.querySelectorAll( '.image-card' ).forEach( card => {
 		const imageContainer = card.closest( '.image-container' );
@@ -226,15 +231,11 @@ export function applyImageCardFilters() {
 	updateGenerationPreviewToggleButtons();
 }
 
-export function applyGenerationPreviewVisibility() {
-	document.querySelectorAll( '.generation-prompt-preview' ).forEach( textarea => {
-		textarea.style.display = AppState.ui.generationPromptsHidden ? 'none' : '';
-	} );
 
-	updateGenerationPreviewToggleButtons();
-	applyImageCardFilters();
-}
-
+/** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
+ * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
+ * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
+ */
 export function toggleGenerationPreview( type ) {
 	if( type === 'prompts' ) {
 		AppState.ui.generationPromptsHidden = !AppState.ui.generationPromptsHidden;
@@ -254,4 +255,49 @@ export function toggleGenerationPreview( type ) {
 	}
 
 	applyGenerationPreviewVisibility();
+}
+/** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
+ * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
+ * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
+ */
+export function applyGenerationPreviewVisibility() {
+	document.querySelectorAll( '.generation-prompt-preview' ).forEach( textarea => {
+		textarea.style.display = AppState.ui.generationPromptsHidden ? 'none' : '';
+	} );
+
+	updateGenerationPreviewToggleButtons();
+	applyImageCardFilters();
+}
+
+
+/** Build a filter key for workflow filtering based on the workflow hash, normalizing it to ensure consistent matching
+ * @param {string} workflowHash raw workflow hash to build filter key from
+ * @returns {string} normalized filter key for workflow filtering
+ */
+export function buildWorkflowFilterKey( workflowHash ) {
+	const hash = workflowHash === null || workflowHash === undefined ? '' : String( workflowHash ).trim();
+	return hash;
+}
+
+
+/** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
+ * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
+ * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
+ */
+export function updateGenerationPreviewToggleButtons() {
+	const promptsBtn = document.getElementById( 'generationTogglePromptsBtn' );
+	const nonWorkflowBtn = document.getElementById( 'generationToggleNonWorkflowBtn' );
+	const nonFavoritesBtn = document.getElementById( 'generationToggleNonFavoritesBtn' );
+
+	if( promptsBtn ) {
+		promptsBtn.textContent = AppState.ui.generationPromptsHidden ? 'Show Prompts' : 'Hide Prompts';
+	}
+
+	if( nonWorkflowBtn ) {
+		nonWorkflowBtn.textContent = AppState.ui.hideNonWorkflowImages ? 'Show Non-Workflow' : 'Hide Non-Workflow';
+	}
+
+	if( nonFavoritesBtn ) {
+		nonFavoritesBtn.textContent = AppState.ui.hideNonFavoriteImages ? 'Show Non-Favorites' : 'Hide Non-Favorites';
+	}
 }

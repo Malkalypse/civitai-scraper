@@ -169,6 +169,12 @@ if ($action === 'sync') {
 echo json_encode(['error' => 'Invalid action']);
 
 // Helper function to sync tags for a model
+/**
+ * Sync tags for model.
+ * @param mixed $modelId modelId value.
+ * @param mixed $tagsOnModels tagsOnModels value.
+ * @return mixed Result value.
+ */
 function syncTagsForModel($modelId, $tagsOnModels) {
   $db = new mysqli('localhost', 'root', '', 'civitai_models');
   

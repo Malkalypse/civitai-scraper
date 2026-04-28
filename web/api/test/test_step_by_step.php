@@ -44,7 +44,6 @@ curl_setopt_array($ch, [
 $body = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlErr = curl_error($ch);
-curl_close($ch);
 
 echo "Step 5b: HTTP $httpCode, " . strlen($body) . " bytes, error: " . ($curlErr ?: 'none') . "\n"; flush();
 $isPng = strlen($body) >= 8 && substr($body, 0, 8) === "\x89PNG\r\n\x1a\n";

@@ -19,9 +19,9 @@ function api_send_json( $payload, $statusCode = 200 ) {
 }
 
 /** Send an error payload and stop execution
- * @param mixed	$message Error message or data to include in response
- * @param int		$statusCode HTTP status code to send (default 400)
- * @param array	$extra Optional additional data to include in response
+ * @param mixed	$message		Error message or data to include in response
+ * @param int		$statusCode	HTTP status code to send (default 400)
+ * @param array	$extra			Optional additional data to include in response
  */
 function api_send_error( $message, $statusCode = 400, $extra = [] ) {
 	$payload = array_merge(
@@ -33,9 +33,9 @@ function api_send_error( $message, $statusCode = 400, $extra = [] ) {
 }
 
 /** Send a standardized success:false error payload and stop execution
- * @param mixed	$message Error message or data to include in response
- * @param int		$statusCode HTTP status code to send (default 400)
- * @param array	$extra Optional additional data to include in response
+ * @param mixed	$message		Error message or data to include in response
+ * @param int		$statusCode	HTTP status code to send (default 400)
+ * @param array	$extra			Optional additional data to include in response
  */
 function api_send_failure( $message, $statusCode = 400, $extra = [] ) {
 	$payload = array_merge(

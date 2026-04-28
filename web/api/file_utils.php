@@ -98,11 +98,11 @@ function findEntryRecursively( string $rootPath, string $targetName, bool $findD
 }
 
 /** Build a normalized rename-target result payload
- * @param string      $rootPath Root directory of search
- * @param string      $oldPath Full path of existing file/directory to rename
- * @param string      $newPath Full path of new file/directory name
- * @param string|null $relativeFolder Optional relative folder path for scoping
- * @return array Structured result with old/new paths and context
+ * @param string      $rootPath				Root directory of search
+ * @param string      $oldPath				Full path of existing file/directory to rename
+ * @param string      $newPath				Full path of new file/directory name
+ * @param string|null $relativeFolder	Optional relative folder path for scoping
+ * @return array	Structured result with old/new paths and context
  */
 function buildRenameTargetsResult(
 	string  $rootPath,
@@ -129,14 +129,14 @@ function buildRenameTargetsResult(
 }
 
 /** Resolve rename targets using subdirectory-scoped search first, then root-wide fallback
- * @param $searchRoots  array       List of root directories to search for rename targets
- * @param $isFolderMode bool        True to search for directories, false for files
- * @param $oldFilename  string      Original filename (without extension)
- * @param $newFilename  string      Desired new filename (without extension)
- * @param $extension    string      Extension to use for file searches (including dot, e.g. ".safetensors")
- * @param $scopedSubdir string|null Optional subdirectory name to scope the initial search 
+ * @param array       $searchRoots  List of root directories to search for rename targets
+ * @param bool        $isFolderMode True to search for directories, false for files
+ * @param string      $oldFilename  Original filename (without extension)
+ * @param string      $newFilename  Desired new filename (without extension)
+ * @param string      $extension    Extension to use for file searches (including dot, e.g. ".safetensors")
+ * @param string|null $scopedSubdir Optional subdirectory name to scope the initial search 
  * @return array|null Structured result with old/new paths and context, or null if no targets found
-*/
+ */
 function findRenameTargets(
 	array   $searchRoots,
 	bool    $isFolderMode,

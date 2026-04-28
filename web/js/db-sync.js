@@ -1,4 +1,4 @@
-/** Database synchronization functions for Civitai Scraper
+/* Database synchronization functions for Civitai Scraper
  * - Handles syncing of model and tag data to local database via API endpoints
  * - Provides function to check if a model/version exists in database and update UI accordingly
  * - Expects certain structure in __NEXT_DATA__ from Civitai model pages for extracting tags and version info
@@ -90,7 +90,6 @@ export async function addModelToDatabase( modelId, selectedVersion ) {
 		addToDbBtn.disabled				= false;
 	}
 }
-
 /** Fetch original filename for given model version ID from server
  * @param {number|string} versionId model version ID to fetch filename for
  * @returns {Promise<string>} original filename (or empty string)
@@ -116,7 +115,6 @@ export async function fetchOriginalFilename( versionId ) {
 
 	return '';
 }
-
 /** Sync tags from fetched model data to database for given model ID	
  * @param {*} nextData	__NEXT_DATA__ object from model page
  * @param {*} modelId		model ID to sync tags for
@@ -163,7 +161,6 @@ export async function syncTagsToDatabase( nextData, modelId ) {
 		console.error( 'Tag sync error:', error );
 	}
 }
-
 /** Sync model version data to database for given model ID and version ID
  * @param {*}							nextData					__NEXT_DATA__ object from model page
  * @param {*}							modelId						model ID to sync

@@ -31,7 +31,6 @@ foreach ($urls as $url) {
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     $finalUrl = curl_getinfo($ch, CURLINFO_EFFECTIVE_URL);
     $error    = curl_error($ch);
-    curl_close($ch);
 
     echo "  HTTP code:   $httpCode\n";
     echo "  Final URL:   $finalUrl\n";

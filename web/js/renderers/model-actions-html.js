@@ -68,35 +68,13 @@ export function buildFetchDataHtml( {
 
 	return html;
 }
-
-/** Build HTML for version links
- * @param {Array} modelVersions Array of model version objects
- * @param {number} selectedVersionId ID of the currently selected version
- * @returns {string} HTML string representing the version links
- * 
- * fetchData() > renderVersionLinks() > buildVersionLinksHtml()
- */
-export function buildVersionLinksHtml( modelVersions, selectedVersionId ) {
-	let versionLinksHtml = '';
-
-	modelVersions.forEach( version => {
-		if( version.id && version.modelId && version.name ) {
-			const modelVersionString = `${version.modelId}?modelVersionId=${version.id}`;
-			const activeClass = selectedVersionId === version.id ? ' active' : '';
-			versionLinksHtml += `<div class="version-link${activeClass}" data-model-version="${escapeHtml( modelVersionString )}">${escapeHtml( version.name )}</div>`;
-		}
-	} );
-
-	return versionLinksHtml;
-}
-
 /** Build HTML for version information
- * @param {Object} params Parameters for building version info HTML
- * @param {Object} params.result Result object containing model and version data
- * @param {Object} params.version Currently selected version object
- * @param {string} params.modelType Type of model
- * @param {string} params.safetensorsFile Original filename from Civitai (if available)
- * @param {string} params.trainedWords Comma-separated trigger words (if available)
+ * @param {Object} params									Parameters for building version info HTML
+ * @param {Object} params.result					Result object containing model and version data
+ * @param {Object} params.version					Currently selected version object
+ * @param {string} params.modelType				Type of model
+ * @param {string} params.safetensorsFile	Original filename from Civitai (if available)
+ * @param {string} params.trainedWords		Comma-separated trigger words (if available)
  * @returns {string} HTML string representing the version information
  */
 export function buildVersionInfoHtml( {
@@ -160,7 +138,6 @@ export function buildVersionInfoHtml( {
 		</div>
 	`;
 }
-
 /** Build HTML for TRPC description
  * @param {string} trpcDescription TRPC description text
  * @returns {string} HTML string representing the TRPC description
@@ -176,7 +153,6 @@ export function buildTrpcDescriptionHtml( trpcDescription ) {
 		</div>
 	`;
 }
-
 /** Build HTML for version selection warning
  * @param {string} versionSelectionMethod Version selection method text
  * @returns {string} HTML string representing the version selection warning
@@ -193,7 +169,6 @@ export function buildVersionSelectionWarningHtml( versionSelectionMethod ) {
 		</div>
 	`;
 }
-
 /** Build HTML for cache info section
  * @returns {string} HTML string representing the cache info section
  */
@@ -206,7 +181,6 @@ export function buildCacheInfoSectionHtml() {
 		</div>
 	`;
 }
-
 /** Build HTML for thumbnail controls section
  * @returns {string} HTML string representing the thumbnail controls section
  */
@@ -224,7 +198,6 @@ export function buildThumbnailControlsSectionHtml() {
 		</div>
 	`;
 }
-
 /** Build HTML for images section
  * @returns {string} HTML string representing the images section
  */
@@ -260,7 +233,17 @@ export function buildImagesSectionHtml() {
 		</div>
 	`;
 }
-
+/** Build HTML for parameters analysis section
+ * @returns {string} HTML string representing the parameters analysis section
+ */
+export function buildParametersAnalysisSectionHtml() {
+	return `
+		<div class="info" id="parametersAnalysisSection" style="display: none;">
+			<strong id="parametersAnalysisTitle">Parameters Analysis</strong>
+			<pre id="parametersAnalysisContent" style="margin-top: 10px; white-space: pre-wrap; word-break: break-word; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 10px; max-height: 500px; overflow: auto;"></pre>
+		</div>
+	`;
+}
 /** Build HTML for workflow analysis section
  * @returns {string} HTML string representing the workflow analysis section
  */
@@ -281,14 +264,24 @@ export function buildWorkflowAnalysisSectionHtml() {
 	`;
 }
 
-/** Build HTML for parameters analysis section
- * @returns {string} HTML string representing the parameters analysis section
+
+/** Build HTML for version links
+ * @param {Array}		modelVersions			Array of model version objects
+ * @param {number}	selectedVersionId	ID of the currently selected version
+ * @returns {string} HTML string representing the version links
+ * 
+ * fetchData() > renderVersionLinks() > buildVersionLinksHtml()
  */
-export function buildParametersAnalysisSectionHtml() {
-	return `
-		<div class="info" id="parametersAnalysisSection" style="display: none;">
-			<strong id="parametersAnalysisTitle">Parameters Analysis</strong>
-			<pre id="parametersAnalysisContent" style="margin-top: 10px; white-space: pre-wrap; word-break: break-word; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 10px; max-height: 500px; overflow: auto;"></pre>
-		</div>
-	`;
+export function buildVersionLinksHtml( modelVersions, selectedVersionId ) {
+	let versionLinksHtml = '';
+
+	modelVersions.forEach( version => {
+		if( version.id && version.modelId && version.name ) {
+			const modelVersionString = `${version.modelId}?modelVersionId=${version.id}`;
+			const activeClass = selectedVersionId === version.id ? ' active' : '';
+			versionLinksHtml += `<div class="version-link${activeClass}" data-model-version="${escapeHtml( modelVersionString )}">${escapeHtml( version.name )}</div>`;
+		}
+	} );
+
+	return versionLinksHtml;
 }

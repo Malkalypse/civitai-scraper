@@ -64,6 +64,16 @@ function web_get_prefs(): array {
 	];
 }
 
+// Load local untracked secrets when present.
+$webLocalSecretsPath = __DIR__ . '/local.secrets.php';
+if( is_file( $webLocalSecretsPath ) ) {
+	require_once $webLocalSecretsPath;
+}
+
+if( !defined( 'SITE_AUTH_COOKIE' ) ) {
+	define( 'SITE_AUTH_COOKIE', '' );
+}
+
 
 /**
  * ────────────────────────────────────────────────────────────────────────────

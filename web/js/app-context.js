@@ -1,7 +1,12 @@
+/* Centralized application context for managing global state and configuration */
+
+// Static configuration values for the application
 export const AppConfig = {
 	copyAllMaxConcurrency: 4 // maximum number of concurrent "copy all" operations to prevent browser overload
 };
+export const COPY_ALL_MAX_CONCURRENCY = AppConfig.copyAllMaxConcurrency;
 
+// Dynamic state of the application that can change during runtime
 export const AppState = {
 	model: { // The currently selected model and version information
 		currentFilename:          null,   // filename currently being viewed/edited
@@ -41,8 +46,7 @@ export const AppState = {
 	}
 };
 
-export const COPY_ALL_MAX_CONCURRENCY = AppConfig.copyAllMaxConcurrency;
-
+// DOM element references for commonly accessed elements
 export const modelInput	= document.getElementById( 'modelInput' );
 export const sourceBtn  = document.getElementById( 'sourceBtn' );
 export const output     = document.getElementById( 'output' );
