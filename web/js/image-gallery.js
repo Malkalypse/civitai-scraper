@@ -1,6 +1,6 @@
 import { AppState, output } from './app-context.js';
 import { waitForWorkflowSectionToBeHidden, applyGenerationPreviewVisibility, applyImageCardFilters } from './filters.js';
-import { checkCached, downloadAndCache, extractImageIdFromUrl, extractFilenameFromUrl, syncCopyAllPreviewWidth, autosizeCopyAllPreview, queueCopyAllPreviewHydration, toggleImageFavorite } from './image-cache.js';
+import { checkCached, downloadAndCache, imageIdFromUrl, extractFilenameFromUrl, syncCopyAllPreviewWidth, autosizeCopyAllPreview, queueCopyAllPreviewHydration, toggleImageFavorite } from './image-cache.js';
 import { copyImageWorkflow, analyzeImageWorkflow, retrySingleImageWorkflowScan } from './workflow.js';
 import { escapeHtml } from './dom-utils.js';
 
@@ -278,7 +278,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 								</video>
 							</div>`;
 					} else {
-						const imageId = extractImageIdFromUrl( info.linkUrl || info.originalUrl );
+						const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
 						const imageFilename = extractFilenameFromUrl( displayUrl );
 						imageHtml = `
 							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
@@ -431,7 +431,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 								</video>
 							</div>`;
 					} else {
-						const imageId = extractImageIdFromUrl( info.linkUrl || info.originalUrl );
+						const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
 						const imageFilename = extractFilenameFromUrl( displayUrl );
 						imageHtml = `
 							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">

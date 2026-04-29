@@ -9,16 +9,16 @@
  */
 
 require_once __DIR__ . '/../../config/site.php';
+require_once __DIR__ . '/../api_utils.php';
 
-header( 'Content-Type: application/json' );
+api_set_json_header();
 
 /** Respond with an error message and exit
  * @param string $message Error message to include in the response
  * @return void Outputs JSON error response and terminates script execution
  */
 function respondError( string $message ): void {
-  echo json_encode( ['error' => $message] );
-  exit;
+  api_send_error( $message );
 }
 
 /** Get raw JSON input and decode it
@@ -317,7 +317,7 @@ try {
   $selection      = selectModelVersion( $modelVersions, $versionId );
   $urlInfo        = buildUrlInfo( $modelInput, $url, $versionId );
 
-  echo json_encode(
+  api_send_json(
     buildSuccessResponse(
       $modelId,
       $urlInfo,
@@ -329,5 +329,5 @@ try {
     )
   );
 } catch( Exception $e ) {
-  echo json_encode( ['error' => 'Exception: ' . $e->getMessage()] );
+  api_send_error( 'Exception: ' . $e->getMessage() );
 }

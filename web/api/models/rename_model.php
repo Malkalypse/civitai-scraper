@@ -437,7 +437,7 @@ function sendRenameResponse(
 			api_send_failure( 'Unknown rename response case', 500 );
 	}
 
-	echo json_encode( $response );
+	api_send_json( $response );
 	exit;
 }
 

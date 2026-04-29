@@ -1,7 +1,9 @@
 <?php
 /** Get ComfyUI node port definitions by node type */
 
-header( 'Content-Type: application/json' );
+require_once __DIR__ . '/../api_utils.php';
+
+api_set_json_header();
 
 $input          = json_decode( file_get_contents( 'php://input' ), true );
 $nodeTypesInput = isset( $input['nodeTypes'] ) && is_array( $input['nodeTypes'] ) ? $input['nodeTypes'] : [];
@@ -23,7 +25,7 @@ foreach ( $nodeTypesInput as $value ) {
 $nodeTypes = array_keys( $nodeTypes );
 
 if( count( $nodeTypes ) === 0 ) {
-  echo json_encode( [
+  api_send_json( [
     'success' => true,
     'nodes'   => new stdClass()
   ] );
@@ -32,11 +34,7 @@ if( count( $nodeTypes ) === 0 ) {
 
 $db = new mysqli( 'localhost', 'root', '', 'comfyui_nodes' );
 if( $db->connect_error ) {
-  echo json_encode( [
-    'success' => false,
-    'error'   => 'Database connection failed: ' . $db->connect_error
-  ] );
-  exit;
+  api_send_failure( 'Database connection failed: ' . $db->connect_error );
 }
 
 $db->set_charset( 'utf8mb4' );
@@ -61,12 +59,8 @@ $sql = "
 
 $stmt = $db->prepare( $sql );
 if( !$stmt ) {
-  echo json_encode( [
-    'success' => false,
-    'error'   => 'Database prepare failed: ' . $db->error
-  ] );
+  api_send_failure( 'Database prepare failed: ' . $db->error );
   $db->close();
-  exit;
 }
 
 $types      = str_repeat( 's', count( $nodeTypes ) );
@@ -78,13 +72,9 @@ foreach( $nodeTypes as $i => $type ) {
 call_user_func_array( [$stmt, 'bind_param'], $bindParams );
 
 if( !$stmt->execute() ) {
-  echo json_encode( [
-    'success' => false,
-    'error'   => 'Database execute failed: ' . $stmt->error
-  ] );
+  api_send_failure( 'Database execute failed: ' . $stmt->error );
   $stmt->close();
   $db->close();
-  exit;
 }
 
 $result = $stmt->get_result();
@@ -118,7 +108,7 @@ while( $row = $result->fetch_assoc() ) {
 $stmt->close();
 $db->close();
 
-echo json_encode( [
+api_send_json( [
   'success' => true,
   'nodes'   => $nodes
 ] );

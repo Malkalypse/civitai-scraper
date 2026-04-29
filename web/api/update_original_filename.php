@@ -1,6 +1,5 @@
 <?php
-/**
- * Update original filename in database for a model/version.
+/** Update original filename in database for a model/version.
  */
 
 require_once __DIR__ . '/api_utils.php';
@@ -62,11 +61,11 @@ if( !$row ) {
 	api_send_failure( 'Model/version not found', 404 );
 }
 
-echo json_encode([
+api_send_json( [
 	'success' => true,
 	'requestedModelId' => $modelId > 0 ? $modelId : null,
 	'modelId' => isset($row['model_id']) ? (int)$row['model_id'] : null,
 	'versionId' => $versionId,
 	'originalFilename' => $row['original_filename'],
 	'affectedRows' => $affectedRows
-]);
+] );

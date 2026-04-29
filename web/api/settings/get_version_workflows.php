@@ -56,7 +56,7 @@ if( $result ) {
 $stmt->close();
 $conn->close();
 
-echo json_encode( [
+api_send_json( [
   'success'   => true,
   'versionId' => $versionId,
   'workflows' => $workflows

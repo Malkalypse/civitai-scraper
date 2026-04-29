@@ -2,7 +2,7 @@
  * @param {string} url The URL to extract the image ID from
  * @returns {number|null} The extracted image ID, or null if not found
  */
-export function extractImageIdFromUrl( url ) {
+export function imageIdFromUrl( url ) {
 	if( !url || typeof url !== 'string' ) {
 		return null;
 	}

@@ -3,6 +3,8 @@
  * Diagnostic test for extract_image_workflow.php
  */
 
+require_once __DIR__ . '/../api_utils.php';
+
 ob_start();
 
 // Simulate what extract_image_workflow.php does at startup
@@ -18,9 +20,9 @@ set_error_handler(static function( $errno, $errstr, $errfile, $errline ) {
 set_exception_handler(static function( Throwable $e ) {
   error_log( 'Uncaught Exception: ' . $e->getMessage() );
   ob_end_clean();
-  header( 'Content-Type: application/json' );
+  api_set_json_header();
   http_response_code( 500 );
-  echo json_encode([
+  api_send_json([
     'success' => false,
     'error' => 'Exception: ' . $e->getMessage()
   ]);
@@ -32,9 +34,9 @@ register_shutdown_function(static function() {
   if ($error !== null && in_array($error['type'], [E_ERROR, E_PARSE, E_CORE_ERROR, E_COMPILE_ERROR], true)) {
     error_log( 'Fatal Error: ' . $error['message'] );
     ob_end_clean();
-    header( 'Content-Type: application/json' );
+    api_set_json_header();
     http_response_code( 500 );
-    echo json_encode([
+    api_send_json([
       'success' => false,
       'error' => 'Fatal error: ' . $error['message'],
       'file' => $error['file'],
@@ -45,7 +47,7 @@ register_shutdown_function(static function() {
   }
 });
 
-echo json_encode([
+api_send_json([
   'success' => true,
   'message' => 'Startup handlers OK',
   'php_version' => phpversion(),

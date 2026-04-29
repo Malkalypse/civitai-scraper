@@ -6,7 +6,10 @@
  */
 
 require_once __DIR__ . '/../../config/site.php';
-header( 'Content-Type: application/json' );
+require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../civitai_url_utils.php';
+
+api_set_json_header();
 
 // Get POST data
 $input      = json_decode( file_get_contents( 'php://input' ), true );
@@ -14,8 +17,7 @@ $modelId    = $input['modelId'] ?? null;
 $versionId  = $input['versionId'] ?? null;
 
 if( !$modelId || !$versionId ) {
-	echo json_encode( ['error' => 'Missing modelId or versionId'] );
-	exit;
+	api_send_error( 'Missing modelId or versionId' );
 }
 
 $carouselImages = [];
@@ -43,98 +45,6 @@ function buildCivitaiThumbnailTransform( $image, $maxSide = 450 ) {
 	return 'anim=false,width=' . ( int )$maxSide . ',optimized=true';
 }
 
-/** Convert a Civitai image URL to a thumbnail URL with the specified transform
- * @param mixed $url Original image URL
- * @param mixed $transform Transform string to apply for thumbnail (e.g. 'anim=false,width=450,optimized=true')
- * @return mixed URL with specified transform applied (or original URL)
- */
-function toCivitaiThumbnailUrl( $url, $transform ) {
-	if( !is_string( $url ) || ( stripos( $url, SITE_CDN_BASE ) === false && stripos( $url, SITE_CDN_LEGACY ) === false ) ) {
-		return $url;
-	}
-
-	$normalized = preg_replace(
-		'~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
-		'/' . $transform,
-		$url,
-		1,
-		$replacedCount
-	);
-
-	if( $replacedCount > 0 && is_string( $normalized ) ) {
-		return $normalized;
-	}
-
-	// Legacy CDN URL: extract token from path and build primary CDN URL
-	if( stripos( $url, SITE_CDN_LEGACY ) !== false ) {
-		$path = substr( $url, strlen( SITE_CDN_LEGACY ) );
-		if( preg_match( '~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches ) ) {
-			$token  = $matches[1];
-			$tail   = isset( $matches[2] ) ? trim( $matches[2], '/' ) : '';
-			$newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/' . $transform;
-			if( $tail !== '' && stripos( $tail, 'original=true' ) !== 0 ) {
-				$newUrl .= '/' . $tail;
-			}
-			return $newUrl;
-		}
-	}
-
-	return $url;
-}
-
-/** Convert Civitai image URL to original image URL by replacing thumbnail transforms
- * @param mixed $url Original or thumbnail image URL
- * @return mixed URL with thumbnail transforms replaced by 'original=true' (or original URL if no transforms found)
- */
-function toCivitaiOriginalUrl( $url ) {
-	if( stripos( $url, SITE_STORAGE_BASE ) !== false ) {
-		$normalizedB2 = preg_replace( '~/original=true(?=[/?#]|$)~i', '/original', $url, 1, $replacedB2Count );
-		if( $replacedB2Count > 0 && is_string( $normalizedB2 ) ) {
-			return $normalizedB2;
-		}
-
-		return $url;
-	}
-
-	if( !is_string( $url ) || ( stripos( $url, SITE_CDN_BASE ) === false && stripos( $url, SITE_CDN_LEGACY ) === false ) ) {
-		return $url;
-	}
-
-	$normalized = preg_replace(
-		'~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
-		'/original=true',
-		$url,
-		1,
-		$replacedCount
-	);
-
-	if( $replacedCount > 0 && is_string( $normalized ) ) {
-		return $normalized;
-	}
-
-	// Legacy CDN URL: extract token from path and build primary CDN URL
-	if( stripos( $url, SITE_CDN_LEGACY ) !== false ) {
-		$path = substr( $url, strlen( SITE_CDN_LEGACY ) );
-		if( preg_match( '~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches ) ) {
-			$token  = $matches[1];
-			$tail   = isset( $matches[2] ) ? trim( $matches[2], '/' ) : '';
-
-			if( $tail !== '' ) {
-				$tail = preg_replace( '~^(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)/?~i', '', $tail );
-				$tail = ltrim( (string)$tail, '/' );
-			}
-
-			$newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/original=true';
-			if( $tail !== '' ) {
-				$newUrl .= '/' . $tail;
-			}
-
-			return $newUrl;
-		}
-	}
-
-	return $url;
-}
 
 /** Extract image page ID from URL-like string when present
  * @param mixed $value String to extract from
@@ -296,8 +206,8 @@ try {
 				foreach( $targetVersion['images'] as $image ) {
 					if( isset( $image['url'] ) ) {
 						$thumbTransform   = buildCivitaiThumbnailTransform( $image, 450 );
-						$originalImageUrl = toCivitaiOriginalUrl( $image['url'] );
-						$imageUrl         = toCivitaiThumbnailUrl( $image['url'], $thumbTransform );
+						$originalImageUrl = api_civitai_to_original_url( $image['url'] );
+						$imageUrl         = api_civitai_to_thumbnail_url( $image['url'], $thumbTransform );
 						$imageData        = [
 							'url'         => $imageUrl,
 							'originalUrl' => $originalImageUrl
@@ -403,13 +313,13 @@ try {
 						$url = SITE_CDN_LEGACY . '/' . SITE_CDN_HASH . '/' . $url . '/' . $thumbTransform;
 					}
 
-					$url = toCivitaiThumbnailUrl( $url, $thumbTransform );
+					$url = api_civitai_to_thumbnail_url( $url, $thumbTransform );
 
 					$originalUrl = $rawUrl;
 					if( strpos( $originalUrl, 'http' ) !== 0 ) {
 						$originalUrl = SITE_STORAGE_BASE . '/' . $originalUrl . '/original';
 					}
-					$originalUrl = toCivitaiOriginalUrl( $originalUrl );
+					$originalUrl = api_civitai_to_original_url( $originalUrl );
 
 					$resolvedLinkUrl = resolveCivitaiImagePageUrl( $img );
 					$dedupeKey = is_string( $resolvedLinkUrl ) && $resolvedLinkUrl !== ''
@@ -455,7 +365,7 @@ try {
 		$cursor								= $nextCursor;
 	}
 	
-	echo json_encode( [
+	api_send_json( [
 		'success' => true,
 		'carouselImages'			=> $carouselImages,
 		'galleryImages'				=> $galleryImages,
@@ -464,5 +374,5 @@ try {
 	] );
 	
 } catch( Exception $e ) {
-	echo json_encode( ['error' => 'Exception: ' . $e->getMessage()] );
+	api_send_error( 'Exception: ' . $e->getMessage() );
 }

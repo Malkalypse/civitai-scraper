@@ -1,11 +1,12 @@
 <?php
 /** Get Models Folder Structure
- *
  * - Returns folder and file structure for models, optionally filtered by type.
  */
 
-header( 'Content-Type: application/json' );
 require_once __DIR__ . '/../../prefs.php';
+require_once __DIR__ . '/../api_utils.php';
+
+api_set_json_header();
 
 /** Collect existing file and folder names in a directory
  * @param string $basePath The base directory to scan
@@ -14,6 +15,7 @@ require_once __DIR__ . '/../../prefs.php';
 function collectExistingFileNames( $basePath ) {
 	$names = [];
 
+	// Check if base path exists and is a directory
 	if( !is_dir( $basePath ) ) {
 		return $names;
 	}
@@ -60,8 +62,7 @@ $conn		= new mysqli( $host, $user, $pass, $dbname );
 
 // Check connection
 if( $conn->connect_error ) {
-	echo json_encode( [ 'error' => 'Database connection failed: ' . $conn->connect_error ] );
-	exit;
+	api_send_error( 'Database connection failed: ' . $conn->connect_error );
 }
 
 try {
@@ -101,9 +102,8 @@ try {
 
 		// Validate provided type against defined aliases
 		if( !isset( $typeAliases[$normalizedType] ) ) {
-			echo json_encode( [ 'error' => 'Invalid model type' ] );
 			$conn->close();
-			exit;
+			api_send_error( 'Invalid model type' );
 		}
 
 		// Get database type and folder path for provided type
@@ -233,7 +233,7 @@ try {
 		return strcmp( $a['folder'], $b['folder'] );
 	} );
 
-	echo json_encode( [
+	api_send_json( [
 		'success'	=> true,
 		'data'		=> $structure
 	] );
@@ -247,5 +247,5 @@ try {
 	if( isset( $conn ) ) {
 		$conn->close();
 	}
-	echo json_encode( ['error' => 'Exception: ' . $e->getMessage()] );
+	api_send_error( 'Exception: ' . $e->getMessage() );
 }

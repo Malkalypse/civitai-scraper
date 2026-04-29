@@ -10,7 +10,8 @@ ini_set( 'display_errors', '1' );
 ini_set( 'log_errors', '1' );
 
 require_once __DIR__ . '/../../config/site.php';
-require_once __DIR__ . '/jpeg_metadata_utils.php';
+require_once __DIR__ . '/../images/jpeg_metadata_utils.php';
+require_once __DIR__ . '/../images/png_metadata_utils.php';
 
 echo "=== Workflow Extraction Debug ===\n\n";
 echo "Testing image: https://civitai.red/images/88012188\n";
@@ -54,35 +55,48 @@ $isJpeg = !$isPng && strlen( $response ) >= 2 && substr( $response, 0, 2 ) === "
 
 echo "Format: " . ($isPng ? 'PNG' : ($isJpeg ? 'JPEG' : 'Unknown')) . "\n\n";
 
-if( !$isJpeg ) {
-  echo "ERROR: Not a JPEG!\n";
-  exit( 1 );
-}
+if( $isJpeg ) {
+  // Try to parse JPEG metadata
+  echo "Step 2: Parsing JPEG metadata...\n";
 
-// Try to parse JPEG
-echo "Step 2: Parsing JPEG metadata...\n";
-
-try {
-  $segments = api_extract_jpeg_segments( $response );
-  echo "Found " . count( $segments['comments'] ) . " comment segments\n";
-  echo "Found " . count( $segments['app1'] ) . " APP1 segments\n";
-  
-  if( count( $segments['comments'] ) > 0 ) {
-    echo "\nComment segments:\n";
-    foreach( $segments['comments'] as $i => $comment ) {
-      echo "  Comment $i: " . substr( $comment, 0, 100 ) . "...\n";
+  try {
+    $segments = api_extract_jpeg_segments( $response );
+    echo "Found " . count( $segments['comments'] ) . " comment segments\n";
+    echo "Found " . count( $segments['app1'] ) . " APP1 segments\n";
+		
+    if( count( $segments['comments'] ) > 0 ) {
+      echo "\nComment segments:\n";
+      foreach( $segments['comments'] as $i => $comment ) {
+        echo "  Comment $i: " . substr( $comment, 0, 100 ) . "...\n";
+      }
     }
-  }
-  
-  if( count( $segments['app1'] ) > 0 ) {
-    echo "\nAPP1 segments:\n";
-    foreach( $segments['app1'] as $i => $app1 ) {
-      $preview = substr( $app1, 0, 100 );
-      echo "  APP1 $i: $preview\n";
+		
+    if( count( $segments['app1'] ) > 0 ) {
+      echo "\nAPP1 segments:\n";
+      foreach( $segments['app1'] as $i => $app1 ) {
+        $preview = substr( $app1, 0, 100 );
+        echo "  APP1 $i: $preview\n";
+      }
     }
+  } catch( Exception $e ) {
+    echo "Error: " . $e->getMessage() . "\n";
+    exit( 1 );
   }
-} catch( Exception $e ) {
-  echo "Error: " . $e->getMessage() . "\n";
+} elseif( $isPng ) {
+  echo "Step 2: Parsing PNG text chunks...\n";
+  try {
+    $chunks = api_parse_png_text_chunks( $response );
+    echo "Found " . count( $chunks ) . " text chunks\n";
+    foreach( $chunks as $i => $chunk ) {
+      $keyword = isset( $chunk['keyword'] ) ? (string)$chunk['keyword'] : '';
+      echo "  Chunk $i keyword: $keyword\n";
+    }
+  } catch( Exception $e ) {
+    echo "Error: " . $e->getMessage() . "\n";
+    exit( 1 );
+  }
+} else {
+  echo "ERROR: Unsupported image format\n";
   exit( 1 );
 }
 

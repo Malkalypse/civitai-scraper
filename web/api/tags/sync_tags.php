@@ -12,19 +12,19 @@ $tagsOnModels = $input['tagsOnModels'] ?? null;
 $modelId      = $input['modelId'] ?? null;
 
 if( !$tagsOnModels || !is_array( $tagsOnModels ) ) {
-  echo json_encode(['error' => 'No tags data provided']);
+  api_send_json(['error' => 'No tags data provided']);
   exit;
 }
 
 if( !$modelId || !is_numeric( $modelId ) ) {
-  echo json_encode(['error' => 'No valid model ID provided']);
+  api_send_json(['error' => 'No valid model ID provided']);
   exit;
 }
 
 $db = api_db_connect();
 
 if( $db->connect_error ) {
-  echo json_encode( ['error' => 'Database connection failed: ' . $db->connect_error] );
+  api_send_json( ['error' => 'Database connection failed: ' . $db->connect_error] );
   exit;
 }
 
@@ -34,7 +34,7 @@ $db->set_charset( 'utf8mb4' );
 $stmt = $db->prepare( "INSERT INTO tags (id, tag) VALUES (?, ?) ON DUPLICATE KEY UPDATE tag = VALUES(tag)" );
 
 if( !$stmt ) {
-  echo json_encode( ['error' => 'Failed to prepare statement: ' . $db->error] );
+  api_send_json( ['error' => 'Failed to prepare statement: ' . $db->error] );
   $db->close();
   exit;
 }
@@ -109,7 +109,7 @@ if( !empty( $tagIds ) ) {
 
 $db->close();
 
-echo json_encode( [
+api_send_json( [
   'success' => true,
   'tags'    => [
     'inserted'        => $inserted,

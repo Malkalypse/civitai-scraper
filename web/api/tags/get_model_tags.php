@@ -15,7 +15,7 @@ if( $conn->connect_error ) {
 $data = api_read_json_input();
 
 if( !isset( $data['tags'] ) || !is_array( $data['tags'] ) || count( $data['tags'] ) === 0 ) {
-	echo json_encode( ['success' => true, 'matchingModels' => []] );
+	api_send_json( ['success' => true, 'matchingModels' => []] );
 	exit;
 }
 
@@ -43,7 +43,7 @@ while( $row = $result->fetch_assoc() ) {
 $stmt->close();
 
 if( count( $tagIds ) === 0 ) {
-	echo json_encode( ['success' => true, 'matchingModels' => []] );
+	api_send_json( ['success' => true, 'matchingModels' => []] );
 	exit;
 }
 
@@ -77,7 +77,7 @@ while( $row = $result->fetch_assoc() ) {
 $stmt->close();
 $conn->close();
 
-echo json_encode( [
+api_send_json( [
 	'success'					=> true,
 	'matchingModels'	=> $matchingModels,
 	'searchedTags'		=> $tags,

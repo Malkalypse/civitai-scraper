@@ -806,7 +806,7 @@
 
 ### Functions
 
-#### 1. `extractImageIdFromUrl()` ⬆️ EXPORTED
+#### 1. `imageIdFromUrl()` ⬆️ EXPORTED
 - **Type**: Named export
 - **Called By**: image-gallery.js, image-cache.js, External
 - **Calls Within File**: (none - string parsing utility)

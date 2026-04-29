@@ -73,7 +73,7 @@ try {
 
   @file_put_contents( $cacheFile, json_encode( $payload ) );
 
-  echo json_encode( [
+  api_send_json( [
     'success'   => true,
     'imageId'   => $imageId,
     'favorite'  => $favorited

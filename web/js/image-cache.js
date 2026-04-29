@@ -1,8 +1,8 @@
 import { AppState, COPY_ALL_MAX_CONCURRENCY } from './app-context.js';
 import { applyWorkflowIdentityToCard, applyImageCardFilters } from './filters.js';
-import { extractImageIdFromUrl, extractFilenameFromUrl } from './url-utils.js';
+import { imageIdFromUrl, extractFilenameFromUrl } from './url-utils.js';
 
-export { extractImageIdFromUrl, extractFilenameFromUrl } from './url-utils.js';
+export { imageIdFromUrl, extractFilenameFromUrl } from './url-utils.js';
 
 /** Check if an image URL is already cached locally, returning the local URL if so
  * @param {string} remoteUrl URL of the image to check in cache
@@ -119,7 +119,7 @@ export function queueCopyAllPreviewHydration( promptTextarea, favoriteCheckbox, 
 		return;
 	}
 
-	const imageId = extractImageIdFromUrl( imagePageUrl );
+	const imageId = imageIdFromUrl( imagePageUrl );
 	if( !imageId ) {
 		promptTextarea.value = 'Prompt unavailable';
 		if( favoriteCheckbox ) {

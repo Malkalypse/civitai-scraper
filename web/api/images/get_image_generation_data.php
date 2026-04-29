@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../workflow_hash_utils.php';
 header( 'Content-Type: application/json' );
 
 $input                = json_decode( file_get_contents( 'php://input' ), true );
@@ -16,7 +17,7 @@ $inputModelVersionId  = isset( $input['modelVersionId'] ) ? ( string )$input['mo
 $inputImageFilename   = isset( $input['imageFilename'] ) ? trim( ( string )$input['imageFilename'] ) : '';
 
 if( $imageId <= 0 ) {
-	echo json_encode( ['success' => false, 'error' => 'Missing or invalid imageId'] );
+	api_send_json( ['success' => false, 'error' => 'Missing or invalid imageId'] );
 	exit;
 }
 
@@ -177,48 +178,28 @@ function shouldRefreshTruncatedCopyAllText( string $promptText, string $copyAllT
  * @param mixed $cached         Cached status to include
  */
 function sendResponse( $success, $imageId, $promptText = '', $copyAllText = '', $favorite = false, $workflowHash = '', $parametersHash = '', $cached = true ) {
-	$normalizedWorkflowHash   = normalizeWorkflowHashFromDb( $workflowHash );
-	$workflowPresent          = is_string( $normalizedWorkflowHash ) && $normalizedWorkflowHash !== '';
-	$normalizedParametersHash = trim( ( string )( $parametersHash ?? '' ) );
-	$parametersPresent        = $normalizedParametersHash !== '';
+	$workflowState = api_describe_workflow_state( $workflowHash, $parametersHash );
 	
-	echo json_encode( [
+	api_send_json( [
 		'success'           => $success,
 		'imageId'           => $imageId,
 		'promptText'        => $promptText,
 		'copyAllText'       => $copyAllText,
 		'favorite'          => $favorite,
-		'workflowHash'      => $normalizedWorkflowHash ?? '',
-		'workflowPresent'   => $workflowPresent,
-		'workflowNull'      => $normalizedWorkflowHash === null,
-		'parametersHash'    => $normalizedParametersHash,
-		'parametersPresent' => $parametersPresent,
+		'workflowHash'      => $workflowState['workflowHash'],
+		'workflowPresent'   => $workflowState['workflowHash'] !== '',
+		'workflowNull'      => $workflowState['workflowNull'],
+		'parametersHash'    => $workflowState['parametersHash'],
+		'parametersPresent' => $workflowState['parametersPresent'],
 		'cached'            => $cached
 	] );
-}
-
-/** Normalize workflow hash value from database
- * @param mixed $value Value from database (string or null)
- * @return string|null Normalized workflow hash, or null if value indicates no workflow (e.g. '-1')
- */
-function normalizeWorkflowHashFromDb( $value ): ?string {
-	if( $value === null ) {
-		return '';
-	}
-
-	$text = trim( ( string )$value );
-	if( $text === '-1' ) {
-		return null;
-	}
-
-	return $text;
 }
 
 
 try {
 	$db = api_db_connect();
 	if( $db->connect_error ) {
-		echo json_encode( ['success' => false, 'error' => 'Database connection failed'] );
+		api_send_json( ['success' => false, 'error' => 'Database connection failed'] );
 		exit;
 	}
 	$db->set_charset( 'utf8mb4' );
@@ -356,7 +337,7 @@ try {
 	sendResponse( true, $imageId, $promptText, $copyAllText, $favorite, $dbWorkflowHash, $dbParametersHash, false );
 
 } catch( Exception $e ) {
-	echo json_encode( [
+	api_send_json( [
 		'success' => false,
 		'error'   => 'Exception: ' . $e->getMessage()
 	] );

@@ -41,7 +41,7 @@ $originalFilename	= $exists ? $modelRow['original_filename'] : null;
 
 $conn->close();
 
-echo json_encode( [
+api_send_json( [
 	'success'						=> true,
 	'exists'						=> $exists,
 	'filename'					=> $filename,

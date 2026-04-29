@@ -21,6 +21,7 @@ set_error_handler( static function( $errno, $errstr, $errfile, $errline ) use( &
 } );
 
 require_once __DIR__ . '/../../config/site.php';
+require_once __DIR__ . '/../civitai_url_utils.php';
 require_once __DIR__ . '/../http_utils.php';
 require_once __DIR__ . '/../json_utils.php';
 require_once __DIR__ . '/jpeg_metadata_utils.php';
@@ -28,6 +29,17 @@ require_once __DIR__ . '/png_metadata_utils.php';
 
 header( 'Content-Type: application/json' );
 header( 'X-Content-Type-Options: nosniff' );
+
+/** Emit a JSON response and terminate execution.
+ * @param mixed $payload Response payload
+ * @param int $statusCode HTTP status code
+ * @param int $jsonFlags Optional json_encode flags
+ */
+function api_respond_json_and_exit( $payload, $statusCode = 200, $jsonFlags = 0 ) {
+	http_response_code( (int)$statusCode );
+	echo json_encode( $payload, (int)$jsonFlags );
+	exit;
+}
 
 $input              = json_decode( file_get_contents( 'php://input' ), true );
 $imageId            = isset( $input['imageId'] ) ? ( int )$input['imageId'] : 0;
@@ -37,60 +49,6 @@ $fullImageUrlInput  = isset( $input['fullImageUrl'] ) ? trim( ( string )$input['
 // Fetch only the first $maxBytes of an image URL using an HTTP Range request.
 // PNG tEXt/zTXt/iTXt chunks always precede IDAT, so the first 4MB is more than
 // enough to capture any workflow metadata without downloading the entire file.
-
-/** Normalize various forms of Civitai image URLs to the canonical original=true format.
- * @param string $url URL to normalize
- * @return string Normalized URL (or original)
- */
-function toCivitaiOriginalUrl( string $url ): string {
-	if( stripos( $url, SITE_STORAGE_BASE ) !== false ) {
-		$normalizedB2 = preg_replace( '~/original=true(?=[/?#]|$)~i', '/original', $url, 1, $replacedB2Count );
-		if( $replacedB2Count > 0 && is_string( $normalizedB2 ) ) {
-			return $normalizedB2;
-		}
-
-		return $url;
-	}
-
-	if( stripos( $url, SITE_CDN_BASE ) === false && stripos( $url, SITE_CDN_LEGACY ) === false ) {
-		return $url;
-	}
-
-	$normalized = preg_replace(
-		'~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
-		'/original=true',
-		$url,
-		1,
-		$replacedCount
-	);
-
-	if( $replacedCount > 0 && is_string( $normalized ) ) {
-		return $normalized;
-	}
-
-	// Legacy CDN URL: extract token from path and build primary CDN URL
-	if( stripos( $url, SITE_CDN_LEGACY ) !== false ) {
-		$path = substr( $url, strlen( SITE_CDN_LEGACY ) );
-		if( preg_match( '~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches ) ) {
-			$token = $matches[1];
-			$tail = isset( $matches[2] ) ? trim( $matches[2], '/' ) : '';
-
-			if( $tail !== '' ) {
-				$tail = preg_replace( '~^(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)/?~i', '', $tail );
-				$tail = ltrim( (string)$tail, '/' );
-			}
-
-			$newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/original=true';
-			if( $tail !== '' ) {
-				$newUrl .= '/' . $tail;
-			}
-
-			return $newUrl;
-		}
-	}
-
-	return $url;
-}
 
 /** Extract JPEG comment and APP1 segments from binary JPEG data
  * @param string $url URL to extract image ID from
@@ -126,12 +84,12 @@ function resolveImageUrlFromCivitaiById( int $imageId ): string {
 			if( is_array( $items ) && count( $items ) > 0 && is_array( $items[0] ) ) {
 				$first = $items[0];
 				if( isset( $first['url'] ) && is_string( $first['url'] ) && trim( $first['url'] ) !== '' ) {
-					return toCivitaiOriginalUrl( trim( $first['url'] ) );
+					return api_civitai_to_original_url( trim( $first['url'] ) );
 				}
 			}
 
 			if( isset( $decoded['url'] ) && is_string( $decoded['url'] ) && trim( $decoded['url'] ) !== '' ) {
-				return toCivitaiOriginalUrl( trim( $decoded['url'] ) );
+				return api_civitai_to_original_url( trim( $decoded['url'] ) );
 			}
 		}
 	}
@@ -141,10 +99,10 @@ function resolveImageUrlFromCivitaiById( int $imageId ): string {
 	$pageResponse = api_http_get( $pageUrl, 20 );
 	if( $pageResponse['ok'] ) {
 		if( preg_match( '~<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)["\']~i', $pageResponse['body'], $m ) ) {
-			return toCivitaiOriginalUrl( $m[1] );
+			return api_civitai_to_original_url( $m[1] );
 		}
 		if( preg_match( '~<meta[^>]+content=["\'](https?://[^"\']+)["\'][^>]+property=["\']og:image["\']~i', $pageResponse['body'], $m ) ) {
-			return toCivitaiOriginalUrl( $m[1] );
+			return api_civitai_to_original_url( $m[1] );
 		}
 	}
 
@@ -181,7 +139,7 @@ function resolveImageUrlCandidatesFromCivitaiById( int $imageId ): array {
 		if( is_array( $trpcImage ) && isset( $trpcImage['url'] ) && is_string( $trpcImage['url'] ) && trim( $trpcImage['url'] ) !== '' ) {
 			$raw = trim( $trpcImage['url'] );
 			if (stripos($raw, 'http://') === 0 || stripos($raw, 'https://') === 0) {
-				$pushUnique( toCivitaiOriginalUrl( $raw ) );
+				$pushUnique( api_civitai_to_original_url( $raw ) );
 			} else {
 				$pushUnique( SITE_STORAGE_BASE . '/' . $raw . '/original' );
 			}
@@ -197,10 +155,10 @@ function resolveImageUrlCandidatesFromCivitaiById( int $imageId ): array {
 	$pageResponse = api_http_get( $pageUrl, 20 );
 	if( $pageResponse['ok'] ) {
 		if( preg_match( '~<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)["\']~i', $pageResponse['body'], $m ) ) {
-			$pushUnique( toCivitaiOriginalUrl( $m[1] ) );
+			$pushUnique( api_civitai_to_original_url( $m[1] ) );
 		}
 		if( preg_match( '~<meta[^>]+content=["\'](https?://[^"\']+)["\'][^>]+property=["\']og:image["\']~i', $pageResponse['body'], $m ) ) {
-			$pushUnique( toCivitaiOriginalUrl( $m[1] ) );
+			$pushUnique( api_civitai_to_original_url( $m[1] ) );
 		}
 	}
 
@@ -377,7 +335,7 @@ function resolveImageUrlFromRestApi( int $imageId ): string {
 	if( is_array( $items ) && count( $items ) > 0 && is_array( $items[0] ) ) {
 		$url = $items[0]['url'] ?? '';
 		if( is_string( $url ) && trim( $url ) !== '' ) {
-			return toCivitaiOriginalUrl( trim( $url ) );
+			return api_civitai_to_original_url( trim( $url ) );
 		}
 	}
 
@@ -411,7 +369,7 @@ function resolveImageUrlFromTrpc( int $imageId ): string {
 	}
 
 	if( stripos( $raw, 'http' ) === 0 ) {
-		return toCivitaiOriginalUrl( $raw );
+		return api_civitai_to_original_url( $raw );
 	}
 
 	return SITE_STORAGE_BASE . '/' . $raw . '/original';
@@ -461,7 +419,7 @@ function buildImageUrlCandidates( string $callerUrl, int $imageId ): array {
 	};
 
 	if( $callerUrl !== '' ) {
-		$addWithPngForms( toCivitaiOriginalUrl( $callerUrl ) );
+		$addWithPngForms( api_civitai_to_original_url( $callerUrl ) );
 	}
 
 	// Only call the remote APIs when the caller URL didn't already give us a UUID to work with.
@@ -481,7 +439,7 @@ try {
 	$candidates				= buildImageUrlCandidates( $fullImageUrlInput, $resolvedImageId );
 	
 	if( count( $candidates ) === 0 ) {
-		echo json_encode( [
+		api_respond_json_and_exit( [
 			'success'							=> false,
 			'error'								=> 'Could not resolve full-size image URL',
 			'imageId'							=> $resolvedImageId,
@@ -489,7 +447,6 @@ try {
 			'passedPageUrl'				=> $imagePageUrl,
 			'passedFullImageUrl'	=> $fullImageUrlInput
 		] );
-		exit;
 	}
 
 	$downloadedUrl			= '';
@@ -549,7 +506,7 @@ try {
 	}
 
 	if( $downloadedUrl === '' ) {
-		echo json_encode( [
+		api_respond_json_and_exit( [
 			'success'						=> false,
 			'error'							=> 'Failed to download image',
 			'httpCode'					=> $lastHttpCode,
@@ -558,12 +515,11 @@ try {
 			'attemptedUrls'			=> $attemptedUrls,
 			'downloadAttempts'	=> $downloadAttempts
 		] );
-		exit;
 	}
 
 	if( $selected['workflowText'] === '' ) {
 		if( $selectedParameters['parametersText'] !== '' ) {
-			$parametersPayload = json_encode( [
+			api_respond_json_and_exit( [
 				'success'					=> true,
 				'mode'						=> 'parameters',
 				'message'					=> 'Parameters data found',
@@ -574,13 +530,11 @@ try {
 				'parametersText'	=> mb_convert_encoding( $selectedParameters['parametersText'], 'UTF-8', 'UTF-8' ),
 				'downloadedUrl'		=> $downloadedUrl,
 				'format'					=> $lastFormat
-			], JSON_INVALID_UTF8_SUBSTITUTE );
-			echo $parametersPayload;
-			exit;
+			], 200, JSON_INVALID_UTF8_SUBSTITUTE );
 		}
 
 		// No workflow and no parameters found
-		echo json_encode([
+		api_respond_json_and_exit( [
 			'success'				=> false,
 			'error'					=> 'No data',
 			'errorCode'			=> 'WORKFLOW_NOT_FOUND',
@@ -589,26 +543,23 @@ try {
 			'downloadedUrl'	=> $downloadedUrl,
 			'format'				=> $lastFormat,
 			'confirmedPng'	=> $confirmedPng
-		]);
-		exit;
+		] );
 	}
 
-	echo json_encode( [
+	api_respond_json_and_exit( [
 		'success'				=> true,
 		'imageId'				=> $resolvedImageId,
 		'imageUrl'			=> $downloadedUrl,
 		'sourceKeyword'	=> $selected['key'],
 		'workflowText'	=> $selected['workflowText']
-	], JSON_INVALID_UTF8_SUBSTITUTE );
+	], 200, JSON_INVALID_UTF8_SUBSTITUTE );
 } catch( Throwable $e ) {
-	header( 'Content-Type: application/json' );
-	http_response_code( 500 );
-	echo json_encode( [
+	api_respond_json_and_exit( [
 		'success'					=> false,
 		'error'						=> 'Exception: ' . $e->getMessage(),
 		'type'						=> get_class( $e ),
 		'file'						=> $e->getFile(),
 		'line'						=> $e->getLine(),
 		'capturedErrors'	=> $capturedErrors
-	] );
+	], 500 );
 }

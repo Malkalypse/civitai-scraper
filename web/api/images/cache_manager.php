@@ -4,16 +4,20 @@
  * Handles cache size calculation and clearing
  */
 
-header( 'Content-Type: application/json' );
+require_once __DIR__ . '/../api_utils.php';
 
+api_set_json_header();
+
+// Input parameters
 $input    = json_decode( file_get_contents( 'php://input' ), true );
 $action   = $input['action'] ?? null;
 $modelId  = $input['modelId'] ?? null;
 
+// Cache directories
 $cacheDir       = __DIR__ . '/../../cache/images';
 $generationDir  = __DIR__ . '/../../cache/image_generation';
 
-// Create cache directory if it doesn't exist
+// Create cache directories if they don't exist
 if( !file_exists( $cacheDir ) ) {
   mkdir( $cacheDir, 0755, true );
 }
@@ -21,7 +25,8 @@ if( !file_exists( $generationDir ) ) {
   mkdir( $generationDir, 0755, true );
 }
 
-/** Load generation metadata by model.
+
+/** Load generation metadata by model
  * @param mixed $generationDir Path to generation metadata directory
  * @param mixed $targetModelId Optional model ID to filter results for
  * @return mixed Array with two elements:
@@ -83,8 +88,9 @@ function getFileSizeBytes( $path ) {
 }
 
 switch( $action ) {
-  case 'getSize':
-    // Calculate total cache size
+  
+  case 'getSize': // calculate total cache size and size for the specified model
+
     $totalSize = 0;
     $modelSize = 0;
     $fileCount = 0;
@@ -112,7 +118,7 @@ switch( $action ) {
       }
     }
     
-    echo json_encode( [
+    api_send_json( [
       'totalSize'   => $totalSize,
       'totalSizeMB' => round( $totalSize / 1048576, 2 ),
       'modelSize'   => $modelSize,
@@ -121,10 +127,9 @@ switch( $action ) {
     ] );
     break;
     
-  case 'clearModel':
+  case 'clearModel': // delete cached images and metadata for the specified model
     if( !$modelId ) {
-      echo json_encode( ['error' => 'No model ID provided'] );
-      exit;
+      api_send_error( 'No model ID provided' );
     }
     
     $deletedImageCount    = 0;
@@ -156,7 +161,7 @@ switch( $action ) {
     $deletedCount = $deletedImageCount + $deletedMetadataCount;
     $deletedSize  = $deletedImageSize + $deletedMetadataSize;
     
-    echo json_encode( [
+    api_send_json( [
       'success' => true,
       'deletedCount'          => $deletedCount,
       'deletedSize'           => $deletedSize,
@@ -170,7 +175,7 @@ switch( $action ) {
     ] );
     break;
     
-  case 'clearAll':
+  case 'clearAll': // delete all cached images and metadata
     $deletedImageCount    = 0;
     $deletedImageSize     = 0;
     $deletedMetadataCount = 0;
@@ -197,7 +202,7 @@ switch( $action ) {
     $deletedCount = $deletedImageCount + $deletedMetadataCount;
     $deletedSize  = $deletedImageSize + $deletedMetadataSize;
     
-    echo json_encode( [
+    api_send_json( [
       'success' => true,
       'deletedCount'          => $deletedCount,
       'deletedSize'           => $deletedSize,
@@ -212,5 +217,5 @@ switch( $action ) {
     break;
     
   default:
-    echo json_encode( ['error' => 'Invalid action'] );
+    api_send_error( 'Invalid action' );
 }

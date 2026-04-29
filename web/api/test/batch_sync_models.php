@@ -3,7 +3,9 @@ error_reporting(0); // Suppress errors/warnings that could break JSON
 ini_set('display_errors', 0);
 ini_set('max_execution_time', 300); // 5 minutes
 set_time_limit(300);
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+
+api_set_json_header();
 ob_start(); // Start output buffering
 require_once __DIR__ . '/../../prefs.php';
 
@@ -22,7 +24,7 @@ if ($action === 'scan') {
 	if (!is_dir($lorasDir)) {
 		ob_end_clean();
 		ob_start();
-		echo json_encode(['success' => false, 'error' => 'Loras directory not found']);
+		api_send_json(['success' => false, 'error' => 'Loras directory not found']);
 		ob_end_flush();
 		exit;
 	}
@@ -72,7 +74,7 @@ if ($action === 'scan') {
 	
 	ob_end_clean();
 	ob_start();
-	echo json_encode([
+	api_send_json([
 		'success' => true,
 		'modelIds' => $modelIds,
 		'files' => $files
@@ -89,7 +91,7 @@ if ($action === 'sync_single') {
 	if (!$modelId) {
 		ob_end_clean();
 		ob_start();
-		echo json_encode(['success' => false, 'error' => 'No model ID provided']);
+		api_send_json(['success' => false, 'error' => 'No model ID provided']);
 		ob_end_flush();
 		exit;
 	}
@@ -109,7 +111,7 @@ if ($action === 'sync_single') {
 	if ($conn->connect_error) {
 		ob_end_clean();
 		ob_start();
-		echo json_encode(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
+		api_send_json(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
 		ob_end_flush();
 		exit;
 	}
@@ -127,7 +129,7 @@ if ($action === 'sync_single') {
 			$conn->close();
 			ob_end_clean();
 			ob_start();
-			echo json_encode(['success' => true, 'skipped' => true, 'synced' => 0, 'errors' => []]);
+			api_send_json(['success' => true, 'skipped' => true, 'synced' => 0, 'errors' => []]);
 			ob_end_flush();
 			exit;
 		}
@@ -226,7 +228,7 @@ if ($action === 'sync_single') {
 	
 	ob_end_clean();
 	ob_start();
-	echo json_encode([
+	api_send_json([
 		'success' => true,
 		'synced' => $synced,
 		'skipped' => false,
@@ -243,7 +245,7 @@ if ($action === 'sync') {
 	if (empty($modelIds)) {
 		ob_end_clean();
 		ob_start();
-		echo json_encode(['success' => false, 'error' => 'No model IDs provided']);
+		api_send_json(['success' => false, 'error' => 'No model IDs provided']);
 		ob_end_flush();
 		exit;
 	}
@@ -262,7 +264,7 @@ if ($action === 'sync') {
 	if ($conn->connect_error) {
 		ob_end_clean();
 		ob_start();
-		echo json_encode(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
+		api_send_json(['success' => false, 'error' => 'Database connection failed: ' . $conn->connect_error]);
 		ob_end_flush();
 		exit;
 	}
@@ -357,7 +359,7 @@ if ($action === 'sync') {
 	// Clear any previous output and send JSON
 	ob_end_clean();
 	ob_start();
-	echo json_encode([
+	api_send_json([
 		'success' => true,
 		'synced' => $synced,
 		'errors' => $errors
@@ -368,5 +370,5 @@ if ($action === 'sync') {
 
 ob_end_clean();
 ob_start();
-echo json_encode(['success' => false, 'error' => 'Invalid action']);
+api_send_json(['success' => false, 'error' => 'Invalid action']);
 ob_end_flush();

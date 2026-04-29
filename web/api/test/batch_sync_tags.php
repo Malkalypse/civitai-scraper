@@ -6,14 +6,16 @@
  */
 
 set_time_limit(0); // No time limit for this operation
-header('Content-Type: application/json');
+require_once __DIR__ . '/../api_utils.php';
+
+api_set_json_header();
 require_once __DIR__ . '/../../prefs.php';
 
 // Path to loras folder
 $lorasPath = web_model_path( 'lora' );
 
 if (!is_dir($lorasPath)) {
-  echo json_encode(['error' => 'Loras directory not found']);
+  api_send_json(['error' => 'Loras directory not found']);
   exit;
 }
 
@@ -52,7 +54,7 @@ if ($action === 'scan') {
     }
   }
   
-  echo json_encode([
+  api_send_json([
     'success' => true,
     'action' => 'scan',
     'total_models' => count($modelIds),
@@ -66,7 +68,7 @@ if ($action === 'sync') {
   $modelIds = $input['modelIds'] ?? [];
   
   if (empty($modelIds)) {
-    echo json_encode(['error' => 'No model IDs provided']);
+    api_send_json(['error' => 'No model IDs provided']);
     exit;
   }
   
@@ -158,7 +160,7 @@ if ($action === 'sync') {
     usleep(500000); // 0.5 seconds
   }
   
-  echo json_encode([
+  api_send_json([
     'success' => true,
     'action' => 'sync',
     'results' => $results
@@ -166,7 +168,7 @@ if ($action === 'sync') {
   exit;
 }
 
-echo json_encode(['error' => 'Invalid action']);
+api_send_json(['error' => 'Invalid action']);
 
 // Helper function to sync tags for a model
 /**

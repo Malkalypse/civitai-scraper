@@ -1,10 +1,11 @@
 <?php
-/**
- * Mark image workflow state in database.
- * Writes metadata to images table and updates workflow_hash column.
+/** Mark image workflow state in database
+ * - Write metadata to images table
+ * - Update workflow_hash column
  */
 
 require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../workflow_hash_utils.php';
 api_set_json_header();
 
 $input					= api_read_json_input();
@@ -32,35 +33,6 @@ function normalizeNonEmptyString( $value ): string {
 	return $text;
 }
 
-/** Normalize workflow hash for storage, using '-1' sentinel for null/invalid values
- * @param mixed $value Input value to normalize (string or other)
- * @return string	Normalized string (trimmed, or '-1' if null/invalid)
- */
-function normalizeWorkflowHashForStorage( $value ): string {
-	if( $value === null ) {
-		return '-1';
-	}
-
-	$text = trim( ( string )$value );
-	if( $text === '' || $text === '-1' ) {
-		return '-1';
-	}
-
-	return $text;
-}
-
-/** Normalize parameters hash for storage, using empty string for null/invalid values
- * @param mixed $value Input value to normalize (string or other)
- * @return string	Normalized string (trimmed, or empty if null/invalid)
- */
-function normalizeParametersHashForStorage( $value ): string {
-	if( $value === null ) {
-		return '';
-	}
-
-	return trim( ( string )$value );
-}
-
 try {
 	$db = api_db_connect();
 	if( $db->connect_error ) {
@@ -79,7 +51,7 @@ try {
 		$parametersHash = '';
 	} elseif( $workflowState === 'parameters_only' ) {
 		$workflowHash		= '-1';
-		$parametersHash	= $hasWorkflowKey ? normalizeParametersHashForStorage( $workflowValue ) : '';
+		$parametersHash	= $hasWorkflowKey ? api_normalize_parameters_hash( $workflowValue ) : '';
 		if( $parametersHash === '' ) {
 			$parametersHash = '1';
 		}
@@ -87,7 +59,7 @@ try {
 		$workflowHash		= '-1';
 		$parametersHash	= '';
 	} elseif( $hasWorkflowKey ) {
-		$workflowHash = normalizeWorkflowHashForStorage( $workflowValue );
+		$workflowHash = api_normalize_workflow_hash_for_storage( $workflowValue );
 	}
 
 	// Prepare model version ID as integer
@@ -127,7 +99,7 @@ try {
 	$db->close();
 
 	// Return success response
-	echo json_encode( [
+	api_send_json( [
 		'success'						=> true,
 		'imageId'						=> $imageId,
 		'workflowNull'			=> $workflowHash === '-1',

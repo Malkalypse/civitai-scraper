@@ -2,6 +2,7 @@
 /** Read workflow entry presence from images table */
 
 require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../workflow_hash_utils.php';
 api_set_json_header();
 
 $input    = api_read_json_input();
@@ -41,39 +42,16 @@ try {
 
 	$result = $stmt->get_result();
 	if( $result && ( $row = $result->fetch_assoc() ) ) {
-		$workflowValue		= $row['workflow_hash'];
-		$parametersValue	= $row['parameters_hash'] ?? null;
-		$parametersHash		= is_string( $parametersValue ) ? trim( $parametersValue ) : '';
-
-		if( $workflowValue === null ) {
-			// NULL means "no workflow entry yet" unless parameters metadata exists.
-			$hasWorkflowEntry = $parametersHash !== '';
-			$workflowNull = false;
-			$workflowHash = '';
-		} elseif( is_string( $workflowValue ) ) {
-			$normalized = trim( $workflowValue );
-			if( $normalized === '-1' ) {
-				// -1 means explicitly confirmed missing workflow.
-				$hasWorkflowEntry = true;
-				$workflowNull     = true;
-				$workflowHash     = '';
-			} elseif( $normalized !== '' ) {
-				// Non-empty hash means workflow is present.
-				$hasWorkflowEntry = true;
-				$workflowNull     = false;
-				$workflowHash     = $normalized;
-			} else {
-				// Empty string means no workflow entry yet.
-				$hasWorkflowEntry = false;
-				$workflowNull     = false;
-				$workflowHash     = '';
-			}
-		}
+		$workflowState    = api_describe_workflow_state( $row['workflow_hash'], $row['parameters_hash'] ?? null );
+		$hasWorkflowEntry = $workflowState['hasWorkflowEntry'];
+		$workflowNull     = $workflowState['workflowNull'];
+		$workflowHash     = $workflowState['workflowHash'];
+		$parametersHash   = $workflowState['parametersHash'];
 	}
 	$stmt->close();
 	$db->close();
 
-	echo json_encode( [
+	api_send_json( [
 		'success'						=> true,
 		'imageId'						=> $imageId,
 		'hasWorkflowEntry'	=> $hasWorkflowEntry,
