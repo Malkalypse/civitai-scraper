@@ -1,3 +1,6 @@
+# Workflow Inference Robustness
+
+- [ ] Add more robust default values and workflow inference logic for cases where only minimal generation parameters are supplied (e.g., only 'Steps' or prompt present). This should ensure that the workflow builder and UI can still provide a meaningful result or clear messaging, even when most parameters are missing.
 # TODO
 
 ## Auth / Credentials

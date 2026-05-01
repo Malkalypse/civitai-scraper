@@ -6,9 +6,9 @@
 
 require_once __DIR__ . '/../api_utils.php';
 require_once __DIR__ . '/../workflow_hash_utils.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
-$input					= api_read_json_input();
+$input					= ApiResponse::readJsonInput();
 $imageId				= isset( $input['imageId'] ) ? ( int )$input['imageId'] : 0;
 $modelId				= isset( $input['modelId'] ) ? ( string )$input['modelId'] : '';
 $modelVersionId = isset( $input['modelVersionId'] ) ? ( string )$input['modelVersionId'] : '';
@@ -18,7 +18,7 @@ $hasWorkflowKey	= array_key_exists( 'workflow', ( array )$input );
 $workflowValue	= $hasWorkflowKey ? $input['workflow'] : null;
 
 if( $imageId <= 0 ) {
-	api_send_failure( 'Missing or invalid imageId' );
+	ApiResponse::sendFailure( 'Missing or invalid imageId' );
 }
 
 /** Normalize non-empty string for storage
@@ -36,7 +36,7 @@ function normalizeNonEmptyString( $value ): string {
 try {
 	$db = api_db_connect();
 	if( $db->connect_error ) {
-		api_send_failure( 'Database connection failed: ' . $db->connect_error, 500 );
+		ApiResponse::sendFailure( 'Database connection failed: ' . $db->connect_error, 500 );
 	}
 	$db->set_charset( 'utf8mb4' );
 
@@ -46,12 +46,12 @@ try {
 	if( $workflowState === 'present' ) {
 		$workflowHash = $hasWorkflowKey ? normalizeNonEmptyString( $workflowValue ) : '';
 		if( $workflowHash === '' || $workflowHash === '-1' ) {
-			api_send_failure( 'Missing workflow hash' );
+			ApiResponse::sendFailure( 'Missing workflow hash' );
 		}
 		$parametersHash = '';
 	} elseif( $workflowState === 'parameters_only' ) {
 		$workflowHash		= '-1';
-		$parametersHash	= $hasWorkflowKey ? api_normalize_parameters_hash( $workflowValue ) : '';
+		$parametersHash	= $hasWorkflowKey ? WorkflowStateManager::normalizeParametersHash( $workflowValue ) : '';
 		if( $parametersHash === '' ) {
 			$parametersHash = '1';
 		}
@@ -59,7 +59,7 @@ try {
 		$workflowHash		= '-1';
 		$parametersHash	= '';
 	} elseif( $hasWorkflowKey ) {
-		$workflowHash = api_normalize_workflow_hash_for_storage( $workflowValue );
+		$workflowHash = WorkflowStateManager::normalizeWorkflowHashForStorage( $workflowValue );
 	}
 
 	// Prepare model version ID as integer
@@ -78,7 +78,7 @@ try {
 	$stmt = $db->prepare( $sql );
 	if( !$stmt ) {
 		$db->close();
-		api_send_failure( 'Prepare failed: ' . $db->error, 500 );
+		ApiResponse::sendFailure( 'Prepare failed: ' . $db->error, 500 );
 	}
 
 	// Bind parameters: i = int, s = string
@@ -92,14 +92,14 @@ try {
 		$error = $stmt->error;
 		$stmt->close();
 		$db->close();
-		api_send_failure( 'Execute failed: ' . $error, 500 );
+		ApiResponse::sendFailure( 'Execute failed: ' . $error, 500 );
 	}
 
 	$stmt->close();
 	$db->close();
 
 	// Return success response
-	api_send_json( [
+	ApiResponse::sendJson( [
 		'success'						=> true,
 		'imageId'						=> $imageId,
 		'workflowNull'			=> $workflowHash === '-1',
@@ -107,5 +107,5 @@ try {
 	] );
 
 } catch( Exception $e ) {
-	api_send_failure( 'Exception: ' . $e->getMessage(), 500 );
+	ApiResponse::sendFailure( 'Exception: ' . $e->getMessage(), 500 );
 }

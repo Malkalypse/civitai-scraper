@@ -6,7 +6,7 @@
 require_once __DIR__ . '/../../prefs.php';
 require_once __DIR__ . '/../api_utils.php';
 
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 /** Collect existing file and folder names in a directory
  * @param string $basePath The base directory to scan
@@ -62,7 +62,7 @@ $conn		= new mysqli( $host, $user, $pass, $dbname );
 
 // Check connection
 if( $conn->connect_error ) {
-	api_send_error( 'Database connection failed: ' . $conn->connect_error );
+	ApiResponse::sendError( 'Database connection failed: ' . $conn->connect_error );
 }
 
 try {
@@ -103,7 +103,7 @@ try {
 		// Validate provided type against defined aliases
 		if( !isset( $typeAliases[$normalizedType] ) ) {
 			$conn->close();
-			api_send_error( 'Invalid model type' );
+			ApiResponse::sendError( 'Invalid model type' );
 		}
 
 		// Get database type and folder path for provided type
@@ -233,7 +233,7 @@ try {
 		return strcmp( $a['folder'], $b['folder'] );
 	} );
 
-	api_send_json( [
+	ApiResponse::sendJson( [
 		'success'	=> true,
 		'data'		=> $structure
 	] );
@@ -247,5 +247,5 @@ try {
 	if( isset( $conn ) ) {
 		$conn->close();
 	}
-	api_send_error( 'Exception: ' . $e->getMessage() );
+	ApiResponse::sendError( 'Exception: ' . $e->getMessage() );
 }

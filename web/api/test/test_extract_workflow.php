@@ -60,7 +60,7 @@ if( $isJpeg ) {
   echo "Step 2: Parsing JPEG metadata...\n";
 
   try {
-    $segments = api_extract_jpeg_segments( $response );
+    $segments = JpegMetadataReader::extractSegments( $response );
     echo "Found " . count( $segments['comments'] ) . " comment segments\n";
     echo "Found " . count( $segments['app1'] ) . " APP1 segments\n";
 		
@@ -85,7 +85,7 @@ if( $isJpeg ) {
 } elseif( $isPng ) {
   echo "Step 2: Parsing PNG text chunks...\n";
   try {
-    $chunks = api_parse_png_text_chunks( $response );
+    $chunks = PngMetadataReader::parseTextChunks( $response );
     echo "Found " . count( $chunks ) . " text chunks\n";
     foreach( $chunks as $i => $chunk ) {
       $keyword = isset( $chunk['keyword'] ) ? (string)$chunk['keyword'] : '';

@@ -10,15 +10,16 @@
 
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../http_utils.php';
 
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 /** Respond with an error message and exit
  * @param string $message Error message to include in the response
  * @return void Outputs JSON error response and terminates script execution
  */
 function respondError( string $message ): void {
-  api_send_error( $message );
+  ApiResponse::sendError( $message );
 }
 
 /** Get raw JSON input and decode it
@@ -72,43 +73,24 @@ function buildModelUrl( string $modelInput ): string {
  * @return array Array with 'success' (bool), 'html' (string), and 'error' (string) keys
  */
 function fetchModelPageHtml( string $url ): array {
-  $ch = curl_init();
-
-  // Set cURL options for fetching the model page
-  curl_setopt_array( $ch, [
-    CURLOPT_URL             => $url,
-    CURLOPT_RETURNTRANSFER  => true,
-    CURLOPT_FOLLOWLOCATION  => true,
-    CURLOPT_MAXREDIRS       => 5,
-    CURLOPT_TIMEOUT         => 30,
-    CURLOPT_SSL_VERIFYPEER  => false,
-    CURLOPT_USERAGENT       => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    CURLOPT_HTTPHEADER      => [
-      'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language: en-US,en;q=0.5',
-      'Connection: keep-alive',
-      'Upgrade-Insecure-Requests: 1'
-    ],
-    CURLOPT_ENCODING        => ''
+  $result = HttpClient::get( $url, 30, [
+    'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+    'Accept-Language: en-US,en;q=0.5',
+    'Connection: keep-alive',
+    'Upgrade-Insecure-Requests: 1'
   ] );
 
-  // Execute the request and capture response, HTTP code, and any errors
-  $html     = curl_exec( $ch ); // HTML content of the civitai page
-  $httpCode = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
-  $error    = curl_error( $ch );
-
-  // Handle error conditions
-  if( $error ) {
-    return ['success' => false, 'error' => "cURL error: {$error}"];
+  if( $result['error'] ) {
+    return ['success' => false, 'error' => "cURL error: {$result['error']}"];
   }
-  if( $httpCode !== 200 ) {
-    return ['success' => false, 'error' => "HTTP error: {$httpCode}"];
+  if( $result['httpCode'] !== 200 ) {
+    return ['success' => false, 'error' => "HTTP error: {$result['httpCode']}"];
   }
-  if( !$html ) {
+  if( $result['body'] === '' ) {
     return ['success' => false, 'error' => 'Empty response from server'];
   }
 
-  return ['success' => true, 'html' => $html];
+  return ['success' => true, 'html' => $result['body']];
 }
 
 /** Extract the __NEXT_DATA__ JSON payload from HTML of Civitai model page
@@ -153,12 +135,29 @@ function extractNextData( string $html ): array {
   ];
 }
 
+/** Find the query entry with queryKey[0] === $key in the trpcState queries array
+ * @param array  $decoded Decoded JSON data from __NEXT_DATA__
+ * @param string $key     First element of the queryKey to match
+ * @return array|null Matching query entry, or null
+ */
+function findQuery( array $decoded, string $key ): ?array {
+  $queries = $decoded['props']['pageProps']['trpcState']['json']['queries'] ?? [];
+  foreach( $queries as $query ) {
+    $queryKeyFirst = $query['queryKey'][0] ?? null;
+    if( is_array( $queryKeyFirst ) && ( $queryKeyFirst[0] ?? null ) === $key ) {
+      return $query;
+    }
+  }
+  return null;
+}
+
 /** Extract model versions from decoded __NEXT_DATA__ JSON
  * @param array $decoded Decoded JSON data from __NEXT_DATA__
  * @return array Array of model versions (or empty array)
  */
 function getModelVersions( array $decoded ): array {
-  return $decoded['props']['pageProps']['trpcState']['json']['queries'][2]['state']['data']['modelVersions'] ?? [];
+  $query = findQuery( $decoded, 'model' );
+  return $query['state']['data']['modelVersions'] ?? [];
 }
 
 /** Extract model tags from decoded __NEXT_DATA__ JSON
@@ -167,7 +166,8 @@ function getModelVersions( array $decoded ): array {
  */
 function getModelTags( array $decoded ): array {
   $modelTags    = [];
-  $tagsOnModels = $decoded['props']['pageProps']['trpcState']['json']['queries'][2]['state']['data']['tagsOnModels'] ?? [];
+  $query        = findQuery( $decoded, 'model' );
+  $tagsOnModels = $query['state']['data']['tagsOnModels'] ?? [];
 
   foreach ( $tagsOnModels as $tagEntry ) {
     if ( isset( $tagEntry['tag']['name'] ) ) {
@@ -317,7 +317,7 @@ try {
   $selection      = selectModelVersion( $modelVersions, $versionId );
   $urlInfo        = buildUrlInfo( $modelInput, $url, $versionId );
 
-  api_send_json(
+  ApiResponse::sendJson(
     buildSuccessResponse(
       $modelId,
       $urlInfo,
@@ -329,5 +329,5 @@ try {
     )
   );
 } catch( Exception $e ) {
-  api_send_error( 'Exception: ' . $e->getMessage() );
+  ApiResponse::sendError( 'Exception: ' . $e->getMessage() );
 }

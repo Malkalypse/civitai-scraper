@@ -7,6 +7,7 @@
 
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../http_utils.php';
 require_once __DIR__ . '/../workflow_hash_utils.php';
 header( 'Content-Type: application/json' );
 
@@ -17,7 +18,7 @@ $inputModelVersionId  = isset( $input['modelVersionId'] ) ? ( string )$input['mo
 $inputImageFilename   = isset( $input['imageFilename'] ) ? trim( ( string )$input['imageFilename'] ) : '';
 
 if( $imageId <= 0 ) {
-	api_send_json( ['success' => false, 'error' => 'Missing or invalid imageId'] );
+	ApiResponse::sendJson( ['success' => false, 'error' => 'Missing or invalid imageId'] );
 	exit;
 }
 
@@ -178,9 +179,9 @@ function shouldRefreshTruncatedCopyAllText( string $promptText, string $copyAllT
  * @param mixed $cached         Cached status to include
  */
 function sendResponse( $success, $imageId, $promptText = '', $copyAllText = '', $favorite = false, $workflowHash = '', $parametersHash = '', $cached = true ) {
-	$workflowState = api_describe_workflow_state( $workflowHash, $parametersHash );
+	$workflowState = WorkflowStateManager::describeWorkflowState( $workflowHash, $parametersHash );
 	
-	api_send_json( [
+	ApiResponse::sendJson( [
 		'success'           => $success,
 		'imageId'           => $imageId,
 		'promptText'        => $promptText,
@@ -199,7 +200,7 @@ function sendResponse( $success, $imageId, $promptText = '', $copyAllText = '', 
 try {
 	$db = api_db_connect();
 	if( $db->connect_error ) {
-		api_send_json( ['success' => false, 'error' => 'Database connection failed'] );
+		ApiResponse::sendJson( ['success' => false, 'error' => 'Database connection failed'] );
 		exit;
 	}
 	$db->set_charset( 'utf8mb4' );
@@ -246,22 +247,9 @@ try {
 	$trpcInput  = json_encode( ['json' => ['id' => $imageId]] );
 	$trpcUrl    = SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GEN . '?input=' . urlencode($trpcInput);
 
-	$ch = curl_init();
-	curl_setopt_array( $ch, [
-		CURLOPT_URL             => $trpcUrl,
-		CURLOPT_RETURNTRANSFER  => true,
-		CURLOPT_TIMEOUT         => 20,
-		CURLOPT_SSL_VERIFYPEER  => false,
-		CURLOPT_USERAGENT       => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-		CURLOPT_HTTPHEADER      => [
-			'Accept: application/json'
-		]
-	] );
+	$httpResult = HttpClient::get( $trpcUrl, 20, ['Accept: application/json'] );
 
-	$response = curl_exec( $ch );
-	$httpCode = curl_getinfo( $ch, CURLINFO_HTTP_CODE );
-
-	if( !$response || $httpCode !== 200 ) {
+	if( !$httpResult['ok'] ) {
 		$db->close();
 		if( $imageExists ) {
 			sendResponse( true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, $dbParametersHash, true );
@@ -272,7 +260,7 @@ try {
 	}
 
 	// Parse API response
-	$data       = json_decode( $response, true );
+	$data       = json_decode( $httpResult['body'], true );
 	$jsonRoot   = $data['result']['data']['json'] ?? [];
 	$meta       = $jsonRoot['meta'] ?? null;
 	$resources  = isset( $jsonRoot['resources'] ) && is_array( $jsonRoot['resources'] ) ? $jsonRoot['resources'] : [];
@@ -337,7 +325,7 @@ try {
 	sendResponse( true, $imageId, $promptText, $copyAllText, $favorite, $dbWorkflowHash, $dbParametersHash, false );
 
 } catch( Exception $e ) {
-	api_send_json( [
+	ApiResponse::sendJson( [
 		'success' => false,
 		'error'   => 'Exception: ' . $e->getMessage()
 	] );

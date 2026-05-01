@@ -9,6 +9,8 @@ while( ob_get_level() ) ob_end_clean();
 
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../civitai_url_utils.php';
+require_once __DIR__ . '/../http_utils.php';
+require_once __DIR__ . '/image_cache_manager_utils.php';
 
 // Start output buffering to catch any errors
 ob_start();
@@ -27,68 +29,7 @@ header( 'Content-Type: application/json' );
  * @return mixed Image ID as integer (null if not found)
  */
 function imageIdFromUrl( $url ) {
-	if( !is_string( $url ) || $url === '' ) {
-		return null;
-	}
-
-	if( preg_match( '~/(\d+)\.(?:jpe?g|png|webp|gif|avif|mp4|webm)(?:[?#].*)?$~i', $url, $matches ) ) {
-		return ( int )$matches[1];
-	}
-
-	if( preg_match( '~(?:^|/)images/(\d+)(?:[/?#].*)?$~i', $url, $matches ) ) {
-		return ( int )$matches[1];
-	}
-
-	return null;
-}
-
-
-/** Resolve a single cached image from metadata
- * @param mixed $imageId	Image ID to look up
- * @param mixed $cacheDir	Cache directory path
- * @return mixed Associative array with keys 'path', 'filename', 'url' if found, or null if not found or on error
- */
-function resolveCachedImage( $imageId, $cacheDir ) {
-	if( !is_numeric( $imageId ) || ( int )$imageId <= 0 || !is_string( $cacheDir ) || $cacheDir === '' ) {
-		return null;
-	}
-
-	$imageId = ( int )$imageId;
-	$metadataPath = __DIR__ . '/../../cache/image_generation/' . $imageId . '.json';
-	if( !is_file( $metadataPath ) ) {
-		return null;
-	}
-
-	$raw = @file_get_contents( $metadataPath );
-	if( $raw === false ) {
-		return null;
-	}
-
-	$decoded = json_decode( $raw, true );
-	if( !is_array( $decoded ) ) {
-		return null;
-	}
-
-	$imageFilename = isset( $decoded['imageFilename'] ) ? trim((string)$decoded['imageFilename']) : '';
-	if( $imageFilename === '' ) {
-		return null;
-	}
-
-	$safeFilename = basename( $imageFilename );
-	if( $safeFilename === '' || $safeFilename === '.' || $safeFilename === '..' ) {
-		return null;
-	}
-
-	$candidatePath = $cacheDir . '/' . $safeFilename;
-	if( !is_file( $candidatePath ) ) {
-		return null;
-	}
-
-	return [
-		'path'			=> $candidatePath,
-		'filename'	=> $safeFilename,
-		'url'				=> 'cache/images/' . $safeFilename
-	];
+	return ImageCacheManager::extractImageIdFromUrl( $url );
 }
 
 
@@ -113,51 +54,6 @@ function respondJsonAndExit( $payload ) {
 	ob_end_clean();
 	echo json_encode( $payload );
 	exit;
-}
-
-
-/** Build cache filenames, paths, and URLs for primary and legacy naming schemes.
- * @param mixed $imageUr	Source image URL
- * @param mixed $imageId	Image ID value
- * @param mixed $cacheDir	Cache directory path
- * @return mixed Associative array of derived cache naming/path values
- */
-function buildCachePathsForImage( $imageUrl, $imageId, $cacheDir ) {
-	$matches = [];
-	preg_match( '/\/([a-f0-9\-]{36})\//i', $imageUrl, $matches );
-
-	if( !$matches ) {
-		$baseName = md5( $imageUrl );
-	} else {
-		$baseName = $matches[1] . '-' . substr( md5( $imageUrl ), 0, 10 );
-	}
-
-	$filename = ( $imageId && $imageId > 0 )
-		? ( ( int )$imageId . '-' . $baseName )
-		: $baseName;
-
-	$extension = 'jpg';
-	if( preg_match( '/\.(jpe?g|png|webp|gif)($|\?)/i', $imageUrl, $extMatch ) ) {
-		$extension = strtolower( $extMatch[1] );
-		if( $extension === 'jpeg' ) {
-			$extension = 'jpg';
-		}
-	}
-
-	$legacyFilename = $baseName;
-
-	return [
-		'baseName'					=> $baseName,
-		'filename'				=> $filename,
-		'imageFilename'		=> $filename . '.' . $extension,
-		'extension'				=> $extension,
-		'cachedFilePath'	=> $cacheDir . '/' . $filename . '.' . $extension,
-		'cachedFileUrl'		=> 'cache/images/' . $filename . '.' . $extension,
-		'legacyFilename'		=> $legacyFilename,
-		'legacyImageFilename' => $legacyFilename . '.' . $extension,
-		'legacyCachedFilePath' => $cacheDir . '/' . $legacyFilename . '.' . $extension,
-		'legacyCachedFileUrl' => 'cache/images/' . $legacyFilename . '.' . $extension
-	];
 }
 
 
@@ -187,60 +83,20 @@ function removeOversizedCachedImage( $filePath, $maxSide = 450 ) {
  * @param mixed $modelId				Model ID value
  * @param mixed $modelVersionId	Model version ID value
  * @param mixed $imageFilename	Cached image filename
+ * @param ImageCacheManager $cache	Cache manager instance
  */
-function persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $imageFilename ) {
+function persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $imageFilename, ImageCacheManager $cache ) {
 	if( !$imageId ) {
 		return;
 	}
 
-	upsertImageGenerationMetadata( $imageId, [
+	$cache->upsertImageGenerationMetadata( $imageId, [
 		'modelId'					=> $modelId,
 		'modelVersionId'	=> $modelVersionId,
 		'imageFilename'		=> $imageFilename
 	] );
 }
-/** Upsert image generation metadata
- * @param mixed $imageId Image ID value
- * @param mixed $payload Payload value (associative array with keys like 'modelId', 'modelVersionId', 'imageFilename')
- */
-function upsertImageGenerationMetadata( $imageId, $payload ) {
-	if( !is_numeric( $imageId ) || ( int )$imageId <= 0 || !is_array( $payload ) ) {
-		return;
-	}
 
-	$imageId = ( int )$imageId;
-	$generationDir = __DIR__ . '/../../cache/image_generation';
-	if( !is_dir( $generationDir ) ) {
-		@mkdir( $generationDir, 0755, true );
-	}
-
-	$filePath = $generationDir . '/' . $imageId . '.json';
-	$existing = [];
-	if( is_file( $filePath ) ) {
-		$raw = @file_get_contents( $filePath );
-		if( $raw !== false ) {
-			$decoded = json_decode( $raw, true );
-			if( is_array( $decoded ) ) {
-				$existing = $decoded;
-			}
-		}
-	}
-
-	$merged = $existing;
-	if( isset( $merged['sourceUrl'] ) ) {
-		unset( $merged['sourceUrl'] );
-	}
-	$merged['imageId'] = $imageId;
-	foreach( $payload as $key => $value ) {
-		if( $value === null || $value === '' ) {
-			continue;
-		}
-		$merged[$key] = $value;
-	}
-	$merged['updatedAt'] = date('c');
-
-	@file_put_contents( $filePath, json_encode( $merged ) );
-}
 
 /** Optimize image bytes using python/optimize_image.py
  * @param mixed $imageData	Raw image bytes
@@ -396,29 +252,33 @@ if( !$imageUrl ) {
 	respondJsonAndExit( ['error' => 'No image URL provided'] );
 }
 
-$imageUrl = api_civitai_to_thumbnail_url( $imageUrl, 'anim=false,width=450,optimized=true', true );
+$imageUrl = CivitaiUrl::toThumbnailUrl( $imageUrl, 'anim=false,width=450,optimized=true', true );
 
-$imageId = imageIdFromUrl($imageUrl);
+$imageId = ImageCacheManager::extractImageIdFromUrl( $imageUrl );
 if( !$imageId && is_string( $lookupUrl ) && $lookupUrl !== '' ) {
-	$imageId = imageIdFromUrl( $lookupUrl );
+	$imageId = ImageCacheManager::extractImageIdFromUrl( $lookupUrl );
 }
 
 // Create cache directories if they don't exist
 $cacheDir = __DIR__ . '/../../cache/images';
-if( !file_exists( $cacheDir ) ) {
-	mkdir( $cacheDir, 0755, true );
-}
+$generationDir = __DIR__ . '/../../cache/image_generation';
+$cache = new ImageCacheManager( $cacheDir, $generationDir );
+$cache->ensureDirectories();
 
 // Fast path: if metadata already knows the cached local filename for this image ID,
 // return it immediately and avoid URL-hash mismatch misses.
 if( $imageId ) {
-	$metadataCached = resolveCachedImage( $imageId, $cacheDir );
+	$metadataCached = $cache->resolveCachedImage( $imageId );
 	if( is_array( $metadataCached ) ) {
-		respondWithCachedImage( $metadataCached['url'], $metadataCached['filename'], $imageId );
+		respondWithCachedImage(
+			$metadataCached['url'],
+			$metadataCached['filename'],
+			$imageId
+		);
 	}
 }
 
-$cachePaths = buildCachePathsForImage( $imageUrl, $imageId, $cacheDir );
+$cachePaths = $cache->buildCachePathsForImage( $imageUrl, $imageId );
 
 // Get the download flag
 $download = $input['download'] ?? false;
@@ -428,7 +288,7 @@ if( file_exists( $cachePaths['cachedFilePath'] ) ) {
 	removeOversizedCachedImage( $cachePaths['cachedFilePath'], 450 );
 
 	if( file_exists( $cachePaths['cachedFilePath'] ) ) {
-		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['imageFilename'] );
+		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['imageFilename'], $cache );
 		respondWithCachedImage( $cachePaths['cachedFileUrl'], $cachePaths['imageFilename'], $imageId );
 	}
 }
@@ -438,7 +298,7 @@ if( !file_exists( $cachePaths['cachedFilePath'] ) && file_exists( $cachePaths['l
 	removeOversizedCachedImage( $cachePaths['legacyCachedFilePath'], 450 );
 
 	if( file_exists( $cachePaths['legacyCachedFilePath'] ) ) {
-		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['legacyImageFilename'] );
+		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['legacyImageFilename'], $cache );
 		respondWithCachedImage( $cachePaths['legacyCachedFileUrl'], $cachePaths['legacyImageFilename'], $imageId );
 	}
 }
@@ -452,21 +312,10 @@ if( !$download ) {
 }
 
 // Download the image (only if download flag is true)
-$ch = curl_init();
-curl_setopt_array( $ch, [
-	CURLOPT_URL							=> $imageUrl,
-	CURLOPT_RETURNTRANSFER	=> true,
-	CURLOPT_FOLLOWLOCATION	=> true,
-	CURLOPT_TIMEOUT					=> 10,
-	CURLOPT_CONNECTTIMEOUT	=> 5,
-	CURLOPT_SSL_VERIFYPEER	=> false,
-	CURLOPT_USERAGENT				=> 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-] );
+$imageResult = HttpClient::get( $imageUrl, 10 );
 
-$imageData	= curl_exec( $ch );
-$httpCode		= curl_getinfo( $ch, CURLINFO_HTTP_CODE );
-
-if( $imageData && $httpCode === 200 ) {
+if( $imageResult['ok'] ) {
+	$imageData = $imageResult['body'];
 	$saved = optimizeWithPythonFromBytes( $imageData, $cachePaths['cachedFilePath'], $cachePaths['extension'], 450, 75 );
 	if( !$saved ) {
 		$saved = saveResizedImageData( $imageData, $cachePaths['cachedFilePath'], $cachePaths['extension'], 450 );
@@ -476,7 +325,7 @@ if( $imageData && $httpCode === 200 ) {
 	}
 	$finalSize = file_exists( $cachePaths['cachedFilePath'] ) ? filesize( $cachePaths['cachedFilePath'] ) : strlen( $imageData );
 
-	persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['imageFilename'] );
+	persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['imageFilename'], $cache );
 	
 	respondJsonAndExit( [
 		'cached'				=> false,
@@ -490,7 +339,7 @@ if( $imageData && $httpCode === 200 ) {
 } else {
 	respondJsonAndExit( [
 		'error'			=> 'Failed to download image',
-		'httpCode'	=> $httpCode,
+		'httpCode'	=> $imageResult['httpCode'],
 		'remoteUrl'	=> $imageUrl
 	] );
 }

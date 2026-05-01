@@ -6,8 +6,8 @@
 require_once __DIR__ . '/../api_utils.php';
 
 // This should always work
-api_set_json_header();
-api_send_json([
+ApiResponse::setJsonHeader();
+ApiResponse::sendJson([
   'success' => true,
   'message' => 'API endpoint is reachable',
   'time' => date('Y-m-d H:i:s'),

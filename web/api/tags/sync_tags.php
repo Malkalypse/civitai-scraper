@@ -5,26 +5,26 @@
  */
 
 require_once __DIR__ . '/../api_utils.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
-$input        = api_read_json_input();
+$input        = ApiResponse::readJsonInput();
 $tagsOnModels = $input['tagsOnModels'] ?? null;
 $modelId      = $input['modelId'] ?? null;
 
 if( !$tagsOnModels || !is_array( $tagsOnModels ) ) {
-  api_send_json(['error' => 'No tags data provided']);
+  ApiResponse::sendJson(['error' => 'No tags data provided']);
   exit;
 }
 
 if( !$modelId || !is_numeric( $modelId ) ) {
-  api_send_json(['error' => 'No valid model ID provided']);
+  ApiResponse::sendJson(['error' => 'No valid model ID provided']);
   exit;
 }
 
 $db = api_db_connect();
 
 if( $db->connect_error ) {
-  api_send_json( ['error' => 'Database connection failed: ' . $db->connect_error] );
+  ApiResponse::sendJson( ['error' => 'Database connection failed: ' . $db->connect_error] );
   exit;
 }
 
@@ -34,7 +34,7 @@ $db->set_charset( 'utf8mb4' );
 $stmt = $db->prepare( "INSERT INTO tags (id, tag) VALUES (?, ?) ON DUPLICATE KEY UPDATE tag = VALUES(tag)" );
 
 if( !$stmt ) {
-  api_send_json( ['error' => 'Failed to prepare statement: ' . $db->error] );
+  ApiResponse::sendJson( ['error' => 'Failed to prepare statement: ' . $db->error] );
   $db->close();
   exit;
 }
@@ -109,7 +109,7 @@ if( !empty( $tagIds ) ) {
 
 $db->close();
 
-api_send_json( [
+ApiResponse::sendJson( [
   'success' => true,
   'tags'    => [
     'inserted'        => $inserted,

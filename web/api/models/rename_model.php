@@ -7,7 +7,7 @@
 require_once __DIR__ . '/../api_utils.php';
 require_once __DIR__ . '/../file_utils.php';
 require_once __DIR__ . '/../../prefs.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 
 /** Build a normalized rename request bundle from raw input
@@ -15,7 +15,7 @@ api_set_json_header();
  * @return array Normalized rename request parameters
 */
 function buildRenameRequest( array $inputParams ): array {
-	$normalized = normalizeFilenames(
+	$normalized = FileUtils::normalizeFilenames(
 		$inputParams['oldFilename'],
 		$inputParams['newFilename'],
 		$inputParams['originalFilename']
@@ -52,7 +52,7 @@ function determineRenameMode( ?string $originalFilename ): bool {
 function parseRenameInput() {
 
 	// Read and decode JSON input
-	$input            = api_read_json_input();
+	$input            = ApiResponse::readJsonInput();
 	$originalFilename = isset( $input['originalFilename'] ) ? trim( ( string )$input['originalFilename'] ) : null;
 	$oldFilename      = $input['oldFilename'] ?? null;
 	$newFilename      = $input['newFilename'] ?? null;
@@ -69,10 +69,10 @@ function parseRenameInput() {
 		}
 	}
 	if( !$oldFilename || !$newFilename ) {
-		api_send_failure( 'Missing filename parameters', 400 );
+		ApiResponse::sendFailure( 'Missing filename parameters', 400 );
 	}
 	if( strpos( $oldFilename, '..' ) !== false || strpos( $newFilename, '..' ) !== false ) {
-		api_send_failure( 'Invalid filename (contains ..)', 400 );
+		ApiResponse::sendFailure( 'Invalid filename (contains ..)', 400 );
 	}
 
 	// Normalize filenames and extract extension 
@@ -155,7 +155,7 @@ function fetchModelType( ?int $modelId, ?int $versionId ): ?string {
 	// Connect to database and query for model type
 	$db = api_db_connect();
 	if( $db->connect_error ) {
-		api_send_failure( 'Database connection failed', 500 );
+		ApiResponse::sendFailure( 'Database connection failed', 500 );
 	}
 	$db->set_charset( 'utf8mb4' );
 	$typeStmt = $db->prepare(
@@ -167,7 +167,7 @@ function fetchModelType( ?int $modelId, ?int $versionId ): ?string {
 	if( !$typeStmt->execute() ) {
 		$typeStmt->close();
 		$db->close();
-		api_send_failure( 'Failed to fetch model type: ' . $typeStmt->error, 500 );
+		ApiResponse::sendFailure( 'Failed to fetch model type: ' . $typeStmt->error, 500 );
 	}
 
 	// Fetch result and extract type
@@ -178,7 +178,7 @@ function fetchModelType( ?int $modelId, ?int $versionId ): ?string {
 	// Validate type value and return
 	if( !$typeRow || !isset( $typeRow['type'] ) || trim( $typeRow['type'] ) === '' ) {
 		$db->close();
-		api_send_failure( 'Could not determine model type for specified model/version', 400 );
+		ApiResponse::sendFailure( 'Could not determine model type for specified model/version', 400 );
 	}
 	$db->close();
 	return trim( $typeRow['type'] );
@@ -268,7 +268,7 @@ function buildSearchRoots( array $candidateBasePaths ): array {
 	}
 
 	if( empty( $searchRoots ) ) {
-		api_send_failure( 'No valid model directories found to search', 400 );
+		ApiResponse::sendFailure( 'No valid model directories found to search', 400 );
 	}
 
 	return $searchRoots;
@@ -291,7 +291,7 @@ function findFileOrDirectory( array $renameRequest, array $pathContext ): array 
 	$extension				= $renameRequest['extension'];
 	$scopedSubdir			= $renameRequest['baseModel'];
 
-	$renameTargets = findRenameTargets(
+	$renameTargets = FileUtils::findRenameTargets(
 		$searchRoots,
 		$isFolderMode,
 		$oldFilename,
@@ -310,7 +310,7 @@ function findFileOrDirectory( array $renameRequest, array $pathContext ): array 
 
 	$fileOrFolder	= $isFolderMode ? 'Folder' : 'File';
 	$searchName		= $isFolderMode ? $oldFilename : ( $oldFilename . $extension );
-	api_send_failure( "$fileOrFolder not found for rename: $searchName", 404 );
+	ApiResponse::sendFailure( "$fileOrFolder not found for rename: $searchName", 404 );
 }
 
 /** Update only the database filename when the file is intentionally missing
@@ -325,7 +325,7 @@ function updateMissingFileDatabaseFilename( array $renameRequest ): int {
 	if( !$stmt->execute() ) {
 		$stmt->close();
 		$db->close();
-		api_send_failure( 'Database update failed: ' . $stmt->error, 500 );
+		ApiResponse::sendFailure( 'Database update failed: ' . $stmt->error, 500 );
 	}
 
 	$affectedRows = $stmt->affected_rows;
@@ -363,7 +363,7 @@ function updateDatabaseFilename( array $renameRequest, array $renameTargets ): a
 		$error = $stmt->error;
 		$stmt->close();
 		$db->close();
-		api_send_failure( "Database update failed: $error", 500 );
+		ApiResponse::sendFailure( "Database update failed: $error", 500 );
 	}
 
 	$affectedRows = $stmt->affected_rows;
@@ -412,7 +412,7 @@ function sendRenameResponse(
 
 		case 'file_only':
 			if( !$renameTargets ) {
-				api_send_failure( 'Missing rename targets for file-only response', 500 );
+				ApiResponse::sendFailure( 'Missing rename targets for file-only response', 500 );
 			}
 			$response['folder']						= $renameTargets['relativeFolder'];
 			$response['databaseUpdated']	= false;
@@ -422,7 +422,7 @@ function sendRenameResponse(
 
 		case 'rename_and_db_update':
 			if( !$renameTargets ) {
-				api_send_failure( 'Missing rename targets for rename response', 500 );
+				ApiResponse::sendFailure( 'Missing rename targets for rename response', 500 );
 			}
 			$response['folder']						= $renameTargets['relativeFolder'];
 			$response['databaseUpdated']	= true;
@@ -434,10 +434,10 @@ function sendRenameResponse(
 			break;
 
 		default:
-			api_send_failure( 'Unknown rename response case', 500 );
+			ApiResponse::sendFailure( 'Unknown rename response case', 500 );
 	}
 
-	api_send_json( $response );
+	ApiResponse::sendJson( $response );
 	exit;
 }
 
@@ -452,7 +452,7 @@ try {
 	// Handle case where file/folder is missing but database update is allowed
 	if( isset( $findResult['allowDbOnlyUpdate'] ) ) {
 		if( !$renameRequest['modelId'] || !$renameRequest['versionId'] ) {
-			api_send_failure( 'Cannot update database filename without modelId/versionId', 400 );
+			ApiResponse::sendFailure( 'Cannot update database filename without modelId/versionId', 400 );
 		}
 		$affectedRows = updateMissingFileDatabaseFilename( $renameRequest );
 		sendRenameResponse( 'db_only_missing_file', $renameRequest, $pathContext, null, $affectedRows );
@@ -460,12 +460,12 @@ try {
 
 	// Check if new filename/folder already exists
 	if( file_exists( $findResult['newPath'] ) || is_dir( $findResult['newPath'] ) ) {
-		api_send_failure( 'A file or folder with that name already exists', 409 );
+		ApiResponse::sendFailure( 'A file or folder with that name already exists', 409 );
 	}
 
 	// Rename the file or folder on disk
 	if( !rename( $findResult['oldPath'], $findResult['newPath'] ) ) {
-		api_send_failure( 'Failed to rename ' . ( $renameRequest['renameFolderMode'] ? 'folder' : 'file' ) . ' on disk', 500 );
+		ApiResponse::sendFailure( 'Failed to rename ' . ( $renameRequest['renameFolderMode'] ? 'folder' : 'file' ) . ' on disk', 500 );
 	}
 
 	// Update database filename
@@ -480,7 +480,7 @@ try {
 
 // Catch unexpected exceptions and return failure response
 } catch( Exception $e ) {
-	api_send_failure( 'Exception: ' . $e->getMessage(), 500 );
+	ApiResponse::sendFailure( 'Exception: ' . $e->getMessage(), 500 );
 }
 
 ?>

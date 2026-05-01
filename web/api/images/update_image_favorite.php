@@ -2,9 +2,9 @@
 /** Update Image Favorite flag */
 
 require_once __DIR__ . '/../api_utils.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
-$input          = api_read_json_input();
+$input          = ApiResponse::readJsonInput();
 $imageId        = isset( $input['imageId'] ) ? ( int )$input['imageId'] : 0;
 $favoriteInput  = $input['favorite'] ?? null;
 $modelId        = isset( $input['modelId'] ) ? ( string )$input['modelId'] : '';
@@ -12,7 +12,7 @@ $modelVersionId = isset( $input['modelVersionId'] ) ? ( string )$input['modelVer
 $imageFilename  = isset( $input['imageFilename'] ) ? trim( ( string )$input['imageFilename'] ) : '';
 
 if( $imageId <= 0 ) {
-  api_send_failure( 'Missing or invalid imageId' );
+  ApiResponse::sendFailure( 'Missing or invalid imageId' );
 }
 
 /** Normalize various input types to a boolean favorite value
@@ -73,11 +73,11 @@ try {
 
   @file_put_contents( $cacheFile, json_encode( $payload ) );
 
-  api_send_json( [
+  ApiResponse::sendJson( [
     'success'   => true,
     'imageId'   => $imageId,
     'favorite'  => $favorited
   ] );
 } catch( Exception $e ) {
-  api_send_failure( 'Exception: ' . $e->getMessage(), 500 );
+  ApiResponse::sendFailure( 'Exception: ' . $e->getMessage(), 500 );
 }

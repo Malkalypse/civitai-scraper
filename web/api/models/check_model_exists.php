@@ -5,18 +5,18 @@
  */
 
 require_once __DIR__ . '/../api_utils.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 $conn = api_db_connect();
 
 if( $conn->connect_error ) {
-	api_send_error( 'Database connection failed: ' . $conn->connect_error, 500 );
+	ApiResponse::sendError( 'Database connection failed: ' . $conn->connect_error, 500 );
 }
 
-$data = api_read_json_input();
+$data = ApiResponse::readJsonInput();
 
 if( !isset( $data['versionId'] ) ) {
-	api_send_error( 'Missing required parameter: versionId', 400 );
+	ApiResponse::sendError( 'Missing required parameter: versionId', 400 );
 }
 
 $requestedModelId	= isset( $data['modelId'] ) ? intval( $data['modelId'] ) : null;
@@ -41,7 +41,7 @@ $originalFilename	= $exists ? $modelRow['original_filename'] : null;
 
 $conn->close();
 
-api_send_json( [
+ApiResponse::sendJson( [
 	'success'						=> true,
 	'exists'						=> $exists,
 	'filename'					=> $filename,

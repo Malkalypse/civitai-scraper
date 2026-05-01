@@ -4,18 +4,18 @@
  */
 
 require_once __DIR__ . '/../api_utils.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 $conn = api_db_connect();
 
 if( $conn->connect_error ) {
-	api_send_failure( 'Database connection failed: ' . $conn->connect_error, 500 );
+	ApiResponse::sendFailure( 'Database connection failed: ' . $conn->connect_error, 500 );
 }
 
-$data = api_read_json_input();
+$data = ApiResponse::readJsonInput();
 
 if( !isset( $data['tags'] ) || !is_array( $data['tags'] ) || count( $data['tags'] ) === 0 ) {
-	api_send_json( ['success' => true, 'matchingModels' => []] );
+	ApiResponse::sendJson( ['success' => true, 'matchingModels' => []] );
 	exit;
 }
 
@@ -43,7 +43,7 @@ while( $row = $result->fetch_assoc() ) {
 $stmt->close();
 
 if( count( $tagIds ) === 0 ) {
-	api_send_json( ['success' => true, 'matchingModels' => []] );
+	ApiResponse::sendJson( ['success' => true, 'matchingModels' => []] );
 	exit;
 }
 
@@ -77,7 +77,7 @@ while( $row = $result->fetch_assoc() ) {
 $stmt->close();
 $conn->close();
 
-api_send_json( [
+ApiResponse::sendJson( [
 	'success'					=> true,
 	'matchingModels'	=> $matchingModels,
 	'searchedTags'		=> $tags,

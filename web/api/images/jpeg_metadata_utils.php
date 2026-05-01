@@ -1,117 +1,119 @@
 <?php
 
-/** Decode EXIF UserComment payloads that may be tagged as ASCII or UTF-16.
- * @param string $raw Raw EXIF UserComment bytes
- * @return string Decoded comment text, or empty string when unavailable
- */
-function api_decode_exif_user_comment( string $raw ): string {
-	if( $raw === '' ) {
-		return '';
-	}
+class JpegMetadataReader {
 
-	if( strpos( $raw, "ASCII\0\0\0" ) === 0 ) {
-		return trim( substr( $raw, 8 ), "\0 \t\r\n" );
-	}
-
-	if( strpos( $raw, "UNICODE\0" ) === 0 ) {
-		$text = substr( $raw, 8 );
-		if( $text === '' ) {
+	/** Decode EXIF UserComment payloads that may be tagged as ASCII or UTF-16.
+	 * @param string $raw Raw EXIF UserComment bytes
+	 * @return string Decoded comment text, or empty string when unavailable
+	 */
+	public static function decodeExifUserComment( string $raw ): string {
+		if( $raw === '' ) {
 			return '';
 		}
 
-		if( substr( $text, 0, 2 ) === "\xFF\xFE" && function_exists( 'iconv' ) ) {
-			$decoded = @iconv( 'UTF-16LE', 'UTF-8//IGNORE', substr( $text, 2 ) );
-			return is_string( $decoded ) ? trim( $decoded ) : '';
+		if( strpos( $raw, "ASCII\0\0\0" ) === 0 ) {
+			return trim( substr( $raw, 8 ), "\0 \t\r\n" );
 		}
 
-		if( substr( $text, 0, 2 ) === "\xFE\xFF" && function_exists( 'iconv' ) ) {
-			$decoded = @iconv( 'UTF-16BE', 'UTF-8//IGNORE', substr( $text, 2 ) );
-			return is_string( $decoded ) ? trim( $decoded ) : '';
-		}
-
-		if( function_exists( 'iconv' ) ) {
-			$decodedLe = @iconv( 'UTF-16LE', 'UTF-8//IGNORE', $text );
-			if( is_string( $decodedLe ) && trim( $decodedLe ) !== '' ) {
-				return trim( $decodedLe );
+		if( strpos( $raw, "UNICODE\0" ) === 0 ) {
+			$text = substr( $raw, 8 );
+			if( $text === '' ) {
+				return '';
 			}
-			$decodedBe = @iconv( 'UTF-16BE', 'UTF-8//IGNORE', $text );
-			if( is_string( $decodedBe ) && trim( $decodedBe ) !== '' ) {
-				return trim( $decodedBe );
+
+			if( substr( $text, 0, 2 ) === "\xFF\xFE" && function_exists( 'iconv' ) ) {
+				$decoded = @iconv( 'UTF-16LE', 'UTF-8//IGNORE', substr( $text, 2 ) );
+				return is_string( $decoded ) ? trim( $decoded ) : '';
 			}
+
+			if( substr( $text, 0, 2 ) === "\xFE\xFF" && function_exists( 'iconv' ) ) {
+				$decoded = @iconv( 'UTF-16BE', 'UTF-8//IGNORE', substr( $text, 2 ) );
+				return is_string( $decoded ) ? trim( $decoded ) : '';
+			}
+
+			if( function_exists( 'iconv' ) ) {
+				$decodedLe = @iconv( 'UTF-16LE', 'UTF-8//IGNORE', $text );
+				if( is_string( $decodedLe ) && trim( $decodedLe ) !== '' ) {
+					return trim( $decodedLe );
+				}
+				$decodedBe = @iconv( 'UTF-16BE', 'UTF-8//IGNORE', $text );
+				if( is_string( $decodedBe ) && trim( $decodedBe ) !== '' ) {
+					return trim( $decodedBe );
+				}
+			}
+
+			return trim( $text, "\0 \t\r\n" );
 		}
 
-		return trim( $text, "\0 \t\r\n" );
+		return trim( $raw, "\0 \t\r\n" );
 	}
 
-	return trim( $raw, "\0 \t\r\n" );
-}
+	/** Extract JPEG COM and APP1 segment payloads from a JPEG binary blob
+	 * @param string $binary JPEG bytes
+	 * @return array{comments: array, app1: array} Extracted segment payloads
+	 */
+	public static function extractSegments( string $binary ): array {
+		$comments = [];
+		$app1     = [];
 
-/** Extract JPEG COM and APP1 segment payloads from a JPEG binary blob
- * @param string $binary JPEG bytes
- * @return array{comments: array, app1: array} Extracted segment payloads
- */
-function api_extract_jpeg_segments( string $binary ): array {
-	$comments = [];
-	$app1     = [];
+		if( strlen( $binary ) < 4 || substr( $binary, 0, 2 ) !== "\xFF\xD8" ) {
+			return ['comments' => $comments, 'app1' => $app1];
+		}
 
-	if( strlen( $binary ) < 4 || substr( $binary, 0, 2 ) !== "\xFF\xD8" ) {
+		$len    = strlen( $binary );
+		$offset = 2;
+
+		while( $offset + 4 <= $len ) {
+			if( ord( $binary[ $offset ] ) !== 0xFF ) {
+				break;
+			}
+
+			while( $offset < $len && ord( $binary[ $offset ] ) === 0xFF ) {
+				$offset++;
+			}
+
+			if( $offset >= $len ) {
+				break;
+			}
+
+			$marker = ord( $binary[$offset] );
+			$offset++;
+
+			if( $marker === 0xDA || $marker === 0xD9 ) {
+				break;
+			}
+
+			if( $offset + 2 > $len ) {
+				break;
+			}
+
+			$segmentLength = unpack( 'n', substr( $binary, $offset, 2 ) )[1];
+			if( $segmentLength < 2 || $offset + $segmentLength > $len ) {
+				break;
+			}
+
+			$payload = substr( $binary, $offset + 2, $segmentLength - 2 );
+
+			if( $marker === 0xFE ) {
+				$comments[] = $payload;
+			} elseif( $marker === 0xE1 ) {
+				$app1[] = $payload;
+			}
+
+			$offset += $segmentLength;
+		}
+
 		return ['comments' => $comments, 'app1' => $app1];
 	}
 
-	$len    = strlen( $binary );
-	$offset = 2;
-
-	while( $offset + 4 <= $len ) {
-		if( ord( $binary[ $offset ] ) !== 0xFF ) {
-			break;
-		}
-
-		while( $offset < $len && ord( $binary[ $offset ] ) === 0xFF ) {
-			$offset++;
-		}
-
-		if( $offset >= $len ) {
-			break;
-		}
-
-		$marker = ord( $binary[$offset] );
-		$offset++;
-
-		if( $marker === 0xDA || $marker === 0xD9 ) {
-			break;
-		}
-
-		if( $offset + 2 > $len ) {
-			break;
-		}
-
-		$segmentLength = unpack( 'n', substr( $binary, $offset, 2 ) )[1];
-		if( $segmentLength < 2 || $offset + $segmentLength > $len ) {
-			break;
-		}
-
-		$payload = substr( $binary, $offset + 2, $segmentLength - 2 );
-
-		if( $marker === 0xFE ) {
-			$comments[] = $payload;
-		} elseif( $marker === 0xE1 ) {
-			$app1[] = $payload;
-		}
-
-		$offset += $segmentLength;
-	}
-
-	return ['comments' => $comments, 'app1' => $app1];
-}
-
-/** Parse likely workflow/parameter-bearing metadata entries from JPEG bytes.
- * @param string $binary JPEG bytes
- * @return array<int, array{chunk: string, keyword: string, text: string}> Metadata entries
- */
-function api_parse_jpeg_metadata_entries( string $binary ): array {
+	/** Parse likely workflow/parameter-bearing metadata entries from JPEG bytes.
+	 * @param string $binary JPEG bytes
+	 * @return array<int, array{chunk: string, keyword: string, text: string}> Metadata entries
+	 */
+	public static function parseMetadataEntries( string $binary ): array {
 	$entries = [];
 
-	$segments = api_extract_jpeg_segments( $binary );
+	$segments = self::extractSegments( $binary );
 	foreach( $segments['comments'] as $comment ) {
 		$text = trim( ( string )$comment, "\0 \t\r\n" );
 		if( $text !== '' ) {
@@ -160,7 +162,7 @@ function api_parse_jpeg_metadata_entries( string $binary ): array {
 						}
 					}
 
-					$decodedUserComment = api_decode_exif_user_comment( $rawUserComment );
+					$decodedUserComment = self::decodeExifUserComment( $rawUserComment );
 					if( $decodedUserComment !== '' ) {
 						$entries[] = ['chunk' => 'JPEG_EXIF', 'keyword' => 'workflow', 'text' => $decodedUserComment];
 					}
@@ -172,4 +174,5 @@ function api_parse_jpeg_metadata_entries( string $binary ): array {
 	}
 
 	return $entries;
+	}
 }

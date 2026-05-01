@@ -3,7 +3,7 @@
 
 require_once __DIR__ . '/../api_utils.php';
 
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 $input          = json_decode( file_get_contents( 'php://input' ), true );
 $nodeTypesInput = isset( $input['nodeTypes'] ) && is_array( $input['nodeTypes'] ) ? $input['nodeTypes'] : [];
@@ -25,7 +25,7 @@ foreach ( $nodeTypesInput as $value ) {
 $nodeTypes = array_keys( $nodeTypes );
 
 if( count( $nodeTypes ) === 0 ) {
-  api_send_json( [
+  ApiResponse::sendJson( [
     'success' => true,
     'nodes'   => new stdClass()
   ] );
@@ -34,7 +34,7 @@ if( count( $nodeTypes ) === 0 ) {
 
 $db = new mysqli( 'localhost', 'root', '', 'comfyui_nodes' );
 if( $db->connect_error ) {
-  api_send_failure( 'Database connection failed: ' . $db->connect_error );
+  ApiResponse::sendFailure( 'Database connection failed: ' . $db->connect_error );
 }
 
 $db->set_charset( 'utf8mb4' );
@@ -59,7 +59,7 @@ $sql = "
 
 $stmt = $db->prepare( $sql );
 if( !$stmt ) {
-  api_send_failure( 'Database prepare failed: ' . $db->error );
+  ApiResponse::sendFailure( 'Database prepare failed: ' . $db->error );
   $db->close();
 }
 
@@ -72,7 +72,7 @@ foreach( $nodeTypes as $i => $type ) {
 call_user_func_array( [$stmt, 'bind_param'], $bindParams );
 
 if( !$stmt->execute() ) {
-  api_send_failure( 'Database execute failed: ' . $stmt->error );
+  ApiResponse::sendFailure( 'Database execute failed: ' . $stmt->error );
   $stmt->close();
   $db->close();
 }
@@ -108,7 +108,7 @@ while( $row = $result->fetch_assoc() ) {
 $stmt->close();
 $db->close();
 
-api_send_json( [
+ApiResponse::sendJson( [
   'success' => true,
   'nodes'   => $nodes
 ] );

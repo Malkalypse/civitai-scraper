@@ -2,18 +2,18 @@
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
 require_once __DIR__ . '/../filename_utils.php';
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 $conn = api_db_connect();
 
 if( $conn->connect_error ) {
-	api_send_error( 'Database connection failed: ' . $conn->connect_error, 500 );
+	ApiResponse::sendError( 'Database connection failed: ' . $conn->connect_error, 500 );
 }
 
-$data = api_read_json_input();
+$data = ApiResponse::readJsonInput();
 
 if( !isset( $data['modelVersions'] ) ) {
-	api_send_error( 'Missing required parameter: modelVersions', 400 );
+	ApiResponse::sendError( 'Missing required parameter: modelVersions', 400 );
 }
 
 $modelVersions		= $data['modelVersions'];
@@ -40,35 +40,25 @@ function fetchVersionFilenameFromApi( $versionId ) {
 		return $cache[$versionId];
 	}
 
-	$url	= SITE_URL_API_REST . '/model-versions/' . $versionId;
-	$ch		= curl_init();
-	curl_setopt_array( $ch, [
-		CURLOPT_URL							=> $url,
-		CURLOPT_RETURNTRANSFER	=> true,
-		CURLOPT_FOLLOWLOCATION	=> true,
-		CURLOPT_MAXREDIRS				=> 5,
-		CURLOPT_TIMEOUT					=> 30,
-		CURLOPT_SSL_VERIFYPEER	=> false,
-		CURLOPT_USERAGENT				=> 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-		CURLOPT_HTTPHEADER			=> api_get_civitai_auth_headers()
-	] );
+	$url = SITE_URL_API_REST . '/model-versions/' . $versionId;
+	$httpResult = HttpClient::get(
+		$url,
+		30,
+		FilenameResolver::getCivitaiAuthHeaders()
+	);
 
-	$response = curl_exec( $ch );
-	$httpCode	= curl_getinfo( $ch, CURLINFO_HTTP_CODE );
-	$error		= curl_error( $ch );
-
-	if( $error || $httpCode !== 200 || !$response ) {
+	if( $httpResult['error'] || $httpResult['httpCode'] !== 200 || !$httpResult['ok'] ) {
 		$cache[$versionId] = null;
 		return null;
 	}
 
-	$decoded = json_decode( $response, true);
+	$decoded = json_decode( $httpResult['body'], true );
 	if( !is_array( $decoded ) ) {
 		$cache[$versionId] = null;
 		return null;
 	}
 
-	$selectedFile	= api_pick_download_file_from_files( $decoded['files'] ?? [] );
+	$selectedFile	= FilenameResolver::pickDownloadFileFromFiles( $decoded['files'] ?? [] );
 	$downloadUrl	= $selectedFile['downloadUrl'] ?? ( $decoded['downloadUrl'] ?? null );
 
 	if( $downloadUrl && !empty( $selectedFile['metadata'] ) && is_array( $selectedFile['metadata'] ) ) {
@@ -90,9 +80,9 @@ function fetchVersionFilenameFromApi( $versionId ) {
 		}
 	}
 
-	$resolvedFilename = api_resolve_download_filename_from_url( $downloadUrl );
+	$resolvedFilename = FilenameResolver::resolveDownloadFilenameFromUrl( $downloadUrl );
 	if( !$resolvedFilename ) {
-		$resolvedFilename = api_pick_download_filename_from_files( $decoded['files'] ?? [] );
+		$resolvedFilename = FilenameResolver::pickDownloadFilenameFromFiles( $decoded['files'] ?? [] );
 	}
 
 	$cache[$versionId] = $resolvedFilename ? trim( $resolvedFilename ) : null;
@@ -108,7 +98,7 @@ foreach( $modelVersions as $version ) {
 	// Get canonical download filename from Civitai API, then fallback to provided version files
 	$originalFilenameRaw = fetchVersionFilenameFromApi( $versionId );
 	if( !$originalFilenameRaw ) {
-		$originalFilenameRaw = api_pick_download_filename_from_files( $version['files'] ?? [] );
+		$originalFilenameRaw = FilenameResolver::pickDownloadFilenameFromFiles( $version['files'] ?? [] );
 	}
 	$originalFilename = $originalFilenameRaw ? $conn->real_escape_string( $originalFilenameRaw ) : null;
 	
@@ -145,7 +135,7 @@ foreach( $modelVersions as $version ) {
 
 $conn->close();
 
-api_send_json( [
+ApiResponse::sendJson( [
 	'success'	=> true,
 	'stats'		=> $stats,
 	'message'	=> "Synced {$stats['inserted']} new records, updated {$stats['updated']} existing records"

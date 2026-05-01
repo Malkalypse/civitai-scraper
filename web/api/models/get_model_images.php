@@ -8,8 +8,9 @@
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
 require_once __DIR__ . '/../civitai_url_utils.php';
+require_once __DIR__ . '/../http_utils.php';
 
-api_set_json_header();
+ApiResponse::setJsonHeader();
 
 // Get POST data
 $input      = json_decode( file_get_contents( 'php://input' ), true );
@@ -17,7 +18,7 @@ $modelId    = $input['modelId'] ?? null;
 $versionId  = $input['versionId'] ?? null;
 
 if( !$modelId || !$versionId ) {
-	api_send_error( 'Missing modelId or versionId' );
+	ApiResponse::sendError( 'Missing modelId or versionId' );
 }
 
 $carouselImages = [];
@@ -176,20 +177,11 @@ function resolveCivitaiImagePageUrl( $image ) {
 try {
 	// Fetch carousel images from Civitai API
 	$apiUrl = SITE_URL_API_REST . '/models/' . $modelId;
-	
-	$apiCh  = curl_init();
-	curl_setopt_array( $apiCh, [
-		CURLOPT_URL             => $apiUrl,
-		CURLOPT_RETURNTRANSFER  => true,
-		CURLOPT_TIMEOUT         => 30,
-		CURLOPT_SSL_VERIFYPEER  => false,
-		CURLOPT_USERAGENT       => 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-	] );
-	
-	$apiResponse = curl_exec( $apiCh );
-	
-	if( $apiResponse ) {
-		$apiData = json_decode( $apiResponse, true );
+
+	$apiResult = HttpClient::get( $apiUrl, 30 );
+
+	if( $apiResult['ok'] ) {
+		$apiData = json_decode( $apiResult['body'], true );
 
 		if( $apiData && isset( $apiData['modelVersions'] ) && !empty( $apiData['modelVersions'] ) ) {
 			// Find the target version
@@ -206,8 +198,8 @@ try {
 				foreach( $targetVersion['images'] as $image ) {
 					if( isset( $image['url'] ) ) {
 						$thumbTransform   = buildCivitaiThumbnailTransform( $image, 450 );
-						$originalImageUrl = api_civitai_to_original_url( $image['url'] );
-						$imageUrl         = api_civitai_to_thumbnail_url( $image['url'], $thumbTransform );
+			$originalImageUrl = CivitaiUrl::toOriginalUrl( $image['url'] );
+			$imageUrl         = CivitaiUrl::toThumbnailUrl( $image['url'], $thumbTransform );
 						$imageData        = [
 							'url'         => $imageUrl,
 							'originalUrl' => $originalImageUrl
@@ -271,23 +263,13 @@ try {
 			$galleryHeaders[] = 'Cookie: ' . trim( SITE_AUTH_COOKIE );
 		}
 
-		$galleryCh = curl_init();
-		curl_setopt_array( $galleryCh, [
-			CURLOPT_URL							=> $galleryApiUrl,
-			CURLOPT_RETURNTRANSFER	=> true,
-			CURLOPT_TIMEOUT					=> 30,
-			CURLOPT_SSL_VERIFYPEER	=> false,
-			CURLOPT_USERAGENT				=> 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-			CURLOPT_HTTPHEADER			=> $galleryHeaders
-		] );
+		$galleryResult = HttpClient::get( $galleryApiUrl, 30, $galleryHeaders );
 
-		$galleryResponse = curl_exec( $galleryCh );
-
-		if( !$galleryResponse ) {
+		if( !$galleryResult['ok'] ) {
 			break;
 		}
 
-		$galleryData = json_decode( $galleryResponse, true );
+		$galleryData = json_decode( $galleryResult['body'], true );
 		if( !is_array( $galleryData ) || !isset( $galleryData['result']['data']['json'] ) || !is_array( $galleryData['result']['data']['json'] ) ) {
 			break;
 		}
@@ -313,13 +295,13 @@ try {
 						$url = SITE_CDN_LEGACY . '/' . SITE_CDN_HASH . '/' . $url . '/' . $thumbTransform;
 					}
 
-					$url = api_civitai_to_thumbnail_url( $url, $thumbTransform );
+					$url = CivitaiUrl::toThumbnailUrl( $url, $thumbTransform );
 
 					$originalUrl = $rawUrl;
 					if( strpos( $originalUrl, 'http' ) !== 0 ) {
 						$originalUrl = SITE_STORAGE_BASE . '/' . $originalUrl . '/original';
 					}
-					$originalUrl = api_civitai_to_original_url( $originalUrl );
+					$originalUrl = CivitaiUrl::toOriginalUrl( $originalUrl );
 
 					$resolvedLinkUrl = resolveCivitaiImagePageUrl( $img );
 					$dedupeKey = is_string( $resolvedLinkUrl ) && $resolvedLinkUrl !== ''
@@ -365,7 +347,7 @@ try {
 		$cursor								= $nextCursor;
 	}
 	
-	api_send_json( [
+	ApiResponse::sendJson( [
 		'success' => true,
 		'carouselImages'			=> $carouselImages,
 		'galleryImages'				=> $galleryImages,
@@ -374,5 +356,5 @@ try {
 	] );
 	
 } catch( Exception $e ) {
-	api_send_error( 'Exception: ' . $e->getMessage() );
+	ApiResponse::sendError( 'Exception: ' . $e->getMessage() );
 }

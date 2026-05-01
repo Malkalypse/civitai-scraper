@@ -76,7 +76,7 @@ function resolveImageUrlFromCivitaiById( int $imageId ): string {
 	}
 
 	$apiUrl = SITE_URL_API_REST . '/images?imageId=' . $imageId;
-	$response = api_http_get( $apiUrl, 20 );
+	$response = HttpClient::get( $apiUrl, 20 );
 	if( $response['ok'] ) {
 		$decoded = json_decode( $response['body'], true );
 		if( is_array( $decoded ) ) {
@@ -84,25 +84,25 @@ function resolveImageUrlFromCivitaiById( int $imageId ): string {
 			if( is_array( $items ) && count( $items ) > 0 && is_array( $items[0] ) ) {
 				$first = $items[0];
 				if( isset( $first['url'] ) && is_string( $first['url'] ) && trim( $first['url'] ) !== '' ) {
-					return api_civitai_to_original_url( trim( $first['url'] ) );
+					return CivitaiUrl::toOriginalUrl( trim( $first['url'] ) );
 				}
 			}
 
 			if( isset( $decoded['url'] ) && is_string( $decoded['url'] ) && trim( $decoded['url'] ) !== '' ) {
-				return api_civitai_to_original_url( trim( $decoded['url'] ) );
+				return CivitaiUrl::toOriginalUrl( trim( $decoded['url'] ) );
 			}
 		}
 	}
 
 	// API lookup failed or returned no items — scrape og:image from the image page
 	$pageUrl      = SITE_URL_IMAGES . '/' . $imageId;
-	$pageResponse = api_http_get( $pageUrl, 20 );
+	$pageResponse = HttpClient::get( $pageUrl, 20 );
 	if( $pageResponse['ok'] ) {
 		if( preg_match( '~<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)["\']~i', $pageResponse['body'], $m ) ) {
-			return api_civitai_to_original_url( $m[1] );
+			return CivitaiUrl::toOriginalUrl( $m[1] );
 		}
 		if( preg_match( '~<meta[^>]+content=["\'](https?://[^"\']+)["\'][^>]+property=["\']og:image["\']~i', $pageResponse['body'], $m ) ) {
-			return api_civitai_to_original_url( $m[1] );
+			return CivitaiUrl::toOriginalUrl( $m[1] );
 		}
 	}
 
@@ -132,14 +132,14 @@ function resolveImageUrlCandidatesFromCivitaiById( int $imageId ): array {
 
 	// Preferred: tRPC image.get often returns the canonical UUID for the original image.
 	$trpcUrl = SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GET . '?input=' . rawurlencode('{"json":{"id":' . $imageId . '}}');
-	$trpcResponse = api_http_get( $trpcUrl, 20 );
+	$trpcResponse = HttpClient::get( $trpcUrl, 20 );
 	if( $trpcResponse['ok'] ) {
 		$trpcDecoded = json_decode( $trpcResponse['body'], true );
 		$trpcImage = $trpcDecoded['result']['data']['json'] ?? null;
 		if( is_array( $trpcImage ) && isset( $trpcImage['url'] ) && is_string( $trpcImage['url'] ) && trim( $trpcImage['url'] ) !== '' ) {
 			$raw = trim( $trpcImage['url'] );
 			if (stripos($raw, 'http://') === 0 || stripos($raw, 'https://') === 0) {
-				$pushUnique( api_civitai_to_original_url( $raw ) );
+				$pushUnique( CivitaiUrl::toOriginalUrl( $raw ) );
 			} else {
 				$pushUnique( SITE_STORAGE_BASE . '/' . $raw . '/original' );
 			}
@@ -152,13 +152,13 @@ function resolveImageUrlCandidatesFromCivitaiById( int $imageId ): array {
 	}
 
 	$pageUrl      = SITE_URL_IMAGES . '/' . $imageId;
-	$pageResponse = api_http_get( $pageUrl, 20 );
+	$pageResponse = HttpClient::get( $pageUrl, 20 );
 	if( $pageResponse['ok'] ) {
 		if( preg_match( '~<meta[^>]+property=["\']og:image["\'][^>]+content=["\'](https?://[^"\']+)["\']~i', $pageResponse['body'], $m ) ) {
-			$pushUnique( api_civitai_to_original_url( $m[1] ) );
+			$pushUnique( CivitaiUrl::toOriginalUrl( $m[1] ) );
 		}
 		if( preg_match( '~<meta[^>]+content=["\'](https?://[^"\']+)["\'][^>]+property=["\']og:image["\']~i', $pageResponse['body'], $m ) ) {
-			$pushUnique( api_civitai_to_original_url( $m[1] ) );
+			$pushUnique( CivitaiUrl::toOriginalUrl( $m[1] ) );
 		}
 	}
 
@@ -321,7 +321,7 @@ function resolveImageUrlFromRestApi( int $imageId ): string {
 		return '';
 	}
 
-	$response = api_http_get( SITE_URL_API_REST . '/images?imageId=' . $imageId, 20 );
+	$response = HttpClient::get( SITE_URL_API_REST . '/images?imageId=' . $imageId, 20 );
 	if( !$response['ok'] ) {
 		return '';
 	}
@@ -335,7 +335,7 @@ function resolveImageUrlFromRestApi( int $imageId ): string {
 	if( is_array( $items ) && count( $items ) > 0 && is_array( $items[0] ) ) {
 		$url = $items[0]['url'] ?? '';
 		if( is_string( $url ) && trim( $url ) !== '' ) {
-			return api_civitai_to_original_url( trim( $url ) );
+			return CivitaiUrl::toOriginalUrl( trim( $url ) );
 		}
 	}
 
@@ -352,7 +352,7 @@ function resolveImageUrlFromTrpc( int $imageId ): string {
 	}
 
 	$trpcUrl	= SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GET . '?input=' . rawurlencode( '{"json":{"id":' . $imageId . '}}' );
-	$response	= api_http_get( $trpcUrl, 20 );
+	$response	= HttpClient::get( $trpcUrl, 20 );
 	if( !$response['ok'] ) {
 		return '';
 	}
@@ -369,7 +369,7 @@ function resolveImageUrlFromTrpc( int $imageId ): string {
 	}
 
 	if( stripos( $raw, 'http' ) === 0 ) {
-		return api_civitai_to_original_url( $raw );
+		return CivitaiUrl::toOriginalUrl( $raw );
 	}
 
 	return SITE_STORAGE_BASE . '/' . $raw . '/original';
@@ -419,7 +419,7 @@ function buildImageUrlCandidates( string $callerUrl, int $imageId ): array {
 	};
 
 	if( $callerUrl !== '' ) {
-		$addWithPngForms( api_civitai_to_original_url( $callerUrl ) );
+		$addWithPngForms( CivitaiUrl::toOriginalUrl( $callerUrl ) );
 	}
 
 	// Only call the remote APIs when the caller URL didn't already give us a UUID to work with.
@@ -464,7 +464,7 @@ try {
 		$downloadAttempts++;
 		$attemptedUrls[] = ['url' => $candidateUrl, 'attempt' => $downloadAttempts];
 
-		$imageResponse = api_http_get_partial( $candidateUrl );
+		$imageResponse = HttpClient::getPartial( $candidateUrl );
 		if( !$imageResponse['ok'] ) {
 			$lastHttpCode	= ( int )$imageResponse['httpCode'];
 			$lastError		= $imageResponse['error'] ?? 'HTTP ' . $lastHttpCode;
@@ -480,14 +480,14 @@ try {
 			$lastFormat					= 'PNG';
 			$confirmedPng				= true;
 			$downloadedUrl			= $candidateUrl;
-			$entries						= api_parse_png_text_chunks( $binary );
+			$entries					= PngMetadataReader::parseTextChunks( $binary );
 			$selected						= selectWorkflowFromEntries( $entries );
 			$selectedParameters	= selectParametersFromEntries( $entries );
 			break;
 		} elseif( $isJpeg ) {
 			$lastFormat					= 'JPEG';
 			$downloadedUrl			= $candidateUrl;
-			$entries						= api_parse_jpeg_metadata_entries( $binary );
+			$entries					= JpegMetadataReader::parseMetadataEntries( $binary );
 			$selected						= selectWorkflowFromEntries( $entries );
 			$selectedParameters	= selectParametersFromEntries( $entries );
 			error_log( "Selected workflow: " . ( strlen( $selected['workflowText'] ) > 0 ? 'yes' : 'no' ) );
