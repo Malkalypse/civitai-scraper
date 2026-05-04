@@ -312,7 +312,7 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 	const result = await fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl );
 	if( result.mode === 'parameters' ) {
 		if( Number.isInteger( imageId ) && imageId > 0 ) {
-			await markImageParametersAsPresent( imageId, imageFilename, '1' );
+			await markImageParametersAsPresent( imageId, imageFilename, '1', result.parametersText );
 			applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', '1' );
 		}
 
@@ -360,7 +360,7 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 
 	if( Number.isInteger( imageId ) && imageId > 0 ) {
 		applyWorkflowIdentityToCard( referenceElement, workflowHash ); // filters.js
-		await markImageWorkflowAsPresent( imageId, imageFilename, workflowHash );
+		await markImageWorkflowAsPresent( imageId, imageFilename, workflowHash, result.workflowText );
 		applyWorkflowUiToAllCardsForImageId( imageId, 'workflow' );
 	}
 
@@ -402,7 +402,8 @@ export async function fetchImageWorkflowData( imageId, imagePageUrl, fullImageUr
 	const requestBody = {
 		imageId,
 		imagePageUrl,
-		fullImageUrl
+		fullImageUrl,
+		modelFilename: AppState.model.currentFilename || ''
 	};
 	
 	console.debug( 'Workflow extraction request:', requestBody );
@@ -525,9 +526,10 @@ export async function fetchImageWorkflowData( imageId, imagePageUrl, fullImageUr
  * @param {number} imageId						image id to update
  * @param {string} [imageFilename='']	optional source filename for storage
  * @param {string} [workflowHash='']	deterministic workflow-shape hash
+ * @param {string} [workflowText='']	raw workflow JSON text for JSDC compression
  * @returns {Promise<boolean>} true on success
  */
-export async function markImageWorkflowAsPresent( imageId, imageFilename = '', workflowHash = '' ) {
+export async function markImageWorkflowAsPresent( imageId, imageFilename = '', workflowHash = '', workflowText = '' ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
 		return false;
 	}
@@ -549,7 +551,8 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 			workflow: workflowHashString,
 			modelId: AppState.model.currentModelId,
 			modelVersionId: AppState.model.currentVersionId,
-			imageFilename
+			imageFilename,
+			workflowText: workflowText || ''
 		} )
 	} );
 
@@ -585,7 +588,7 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
  * @param {string} [parametersHash='1'] lightweight parameters marker/hash
  * @returns {Promise<boolean>} true on success
  */
-export async function markImageParametersAsPresent( imageId, imageFilename = '', parametersHash = '1' ) {
+export async function markImageParametersAsPresent( imageId, imageFilename = '', parametersHash = '1', parametersText = '' ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
 		return false;
 	}
@@ -601,7 +604,8 @@ export async function markImageParametersAsPresent( imageId, imageFilename = '',
 			workflow: normalizedHash,
 			modelId: AppState.model.currentModelId,
 			modelVersionId: AppState.model.currentVersionId,
-			imageFilename
+			imageFilename,
+			parametersText: parametersText || ''
 		} )
 	} );
 

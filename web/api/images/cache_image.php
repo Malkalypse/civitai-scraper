@@ -260,9 +260,9 @@ if( !$imageId && is_string( $lookupUrl ) && $lookupUrl !== '' ) {
 }
 
 // Create cache directories if they don't exist
-$cacheDir = __DIR__ . '/../../cache/images';
-$generationDir = __DIR__ . '/../../cache/image_generation';
-$cache = new ImageCacheManager( $cacheDir, $generationDir );
+$cacheDir				= __DIR__ . '/../../cache/images';
+$generationDir	= __DIR__ . '/../../cache/image_generation';
+$cache					= new ImageCacheManager( $cacheDir, $generationDir );
 $cache->ensureDirectories();
 
 // Fast path: if metadata already knows the cached local filename for this image ID,

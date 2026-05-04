@@ -13,6 +13,8 @@ Notes:
 - "Widgets" accepts both "Widgets:" and "Widgets".
 - Values can be quoted strings or JSON/Python-style string arrays.
 - Works with either `node_types` or `nodes` as the node table.
+
+usage: python import_comfyui_node_blocks.py --<filename>
 """
 
 from __future__ import annotations

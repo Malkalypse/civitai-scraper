@@ -6,6 +6,7 @@
 
 require_once __DIR__ . '/../api_utils.php';
 require_once __DIR__ . '/../workflow_hash_utils.php';
+require_once __DIR__ . '/jsdc_utils.php';
 ApiResponse::setJsonHeader();
 
 $input					= ApiResponse::readJsonInput();
@@ -16,6 +17,8 @@ $imageFilename	= isset( $input['imageFilename'] ) ? trim( ( string )$input['imag
 $workflowState	= isset( $input['workflowState'] ) ? trim( ( string )$input['workflowState'] ) : '';
 $hasWorkflowKey	= array_key_exists( 'workflow', ( array )$input );
 $workflowValue	= $hasWorkflowKey ? $input['workflow'] : null;
+$parametersText	= isset( $input['parametersText'] ) ? trim( ( string )$input['parametersText'] ) : '';
+$workflowText	= isset( $input['workflowText'] ) ? trim( ( string )$input['workflowText'] ) : '';
 
 if( $imageId <= 0 ) {
 	ApiResponse::sendFailure( 'Missing or invalid imageId' );
@@ -65,15 +68,18 @@ try {
 	// Prepare model version ID as integer
 	$modelVersionId = ( int )$modelVersionId;
 
-	// Upsert into images table: insert or update the image record with metadata
-		$sql = 'INSERT INTO images (image_id, model_id, model_version_id, image_filename, workflow_hash, parameters_hash) ' .
-			'VALUES (?, ?, ?, ?, ?, ?) ' .
-				 'ON DUPLICATE KEY UPDATE model_id = VALUES(model_id), ' .
-				 '                        model_version_id = VALUES(model_version_id), ' .
-				 '                        image_filename = VALUES(image_filename), ' .
-				 '                        workflow_hash = VALUES(workflow_hash), ' .
-			'                        parameters_hash = VALUES(parameters_hash), ' .
-				 '                        updated_at = CURRENT_TIMESTAMP';
+	// Upsert into images table: insert or update the image record with metadata.
+	// parameters_text is only written on insert or when the column is currently NULL,
+	// preserving any value already captured from the original image.
+	$sql = 'INSERT INTO images (image_id, model_id, model_version_id, image_filename, workflow_hash, parameters_hash, parameters_text) ' .
+		'VALUES (?, ?, ?, ?, ?, ?, NULLIF(?, "")) ' .
+		'ON DUPLICATE KEY UPDATE model_id = VALUES(model_id), ' .
+		'                        model_version_id = VALUES(model_version_id), ' .
+		'                        image_filename = VALUES(image_filename), ' .
+		'                        workflow_hash = VALUES(workflow_hash), ' .
+		'                        parameters_hash = VALUES(parameters_hash), ' .
+		'                        parameters_text = COALESCE(parameters_text, NULLIF(VALUES(parameters_text), "")), ' .
+		'                        updated_at = CURRENT_TIMESTAMP';
 
 	$stmt = $db->prepare( $sql );
 	if( !$stmt ) {
@@ -81,13 +87,12 @@ try {
 		ApiResponse::sendFailure( 'Prepare failed: ' . $db->error, 500 );
 	}
 
-	// Bind parameters: i = int, s = string
 	$modelIdInt = ( int )$modelId;
 	if( $modelIdInt === 0 && $modelId !== '0' && $modelId !== '' ) {
 		$modelIdInt = 0;
 	}
 
-	$stmt->bind_param( 'iiisss', $imageId, $modelIdInt, $modelVersionId, $imageFilename, $workflowHash, $parametersHash );
+	$stmt->bind_param( 'iiissss', $imageId, $modelIdInt, $modelVersionId, $imageFilename, $workflowHash, $parametersHash, $parametersText );
 	if( !$stmt->execute() ) {
 		$error = $stmt->error;
 		$stmt->close();
@@ -97,6 +102,15 @@ try {
 
 	$stmt->close();
 	$db->close();
+
+	// Store JSDC-compressed workflow when a real hash and workflow text are available
+	if( $workflowHash !== '-1' && $workflowText !== '' ) {
+		$workflowDecoded = json_decode( $workflowText, true );
+		if( is_array( $workflowDecoded ) ) {
+			$cacheDir = __DIR__ . '/../../cache/workflows';
+			jsdc_store_workflow( $cacheDir, $workflowHash, $imageId, $workflowDecoded );
+		}
+	}
 
 	// Return success response
 	ApiResponse::sendJson( [

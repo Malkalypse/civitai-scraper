@@ -1,4 +1,4 @@
-Type: "EmptySD3LatentImage"
-Inputs: []
-Widgets ["width", "height", "batch-size"]
-Outputs: ["LATENT"]
+Type: "LTXVScheduler"
+Inputs: ["latent"]
+Widgets: ["steps", "max_shift", "base_shift", "stretch", "terminal"]
+Outputs: ["SIGMAS"]
