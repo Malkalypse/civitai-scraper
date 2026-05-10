@@ -6,20 +6,29 @@
  */
 class WorkflowStateManager {
 
-	/** Normalize parameters hash value for reads and writes
-	 * @param mixed $value Parameters hash value to normalize
-	 * @return string Normalized parameters hash value (empty string for null or non-string)
+	/** Describe workflow state from a stored workflow hash value.
+	 * parametersPresent is derived from the 'P-' prefix on workflow_hash —
+	 * no separate parameters_hash column is needed.
+	 * @param mixed $workflowValue Workflow hash value read from the database
+	 * @return array{hasWorkflowEntry: bool, workflowNull: bool, workflowHash: string, parametersPresent: bool}
 	 */
-	public static function normalizeParametersHash( $value ): string {
-		if( $value === null ) {
-			return '';
-		}
+	public static function describeWorkflowState( $workflowValue ): array {
+		$normalizedWorkflowHash = self::normalizeWorkflowHashFromDb( $workflowValue );
+		$workflowNull           = $normalizedWorkflowHash === null;
+		$workflowHash           = is_string( $normalizedWorkflowHash ) ? $normalizedWorkflowHash : '';
+		$parametersPresent      = str_starts_with( $workflowHash, 'P-' );
+		$hasWorkflowEntry       = $workflowNull || $workflowHash !== '';
 
-		return trim( ( string )$value );
+		return [
+			'hasWorkflowEntry' => $hasWorkflowEntry,
+			'workflowNull'     => $workflowNull,
+			'workflowHash'     => $workflowHash,
+			'parametersPresent'=> $parametersPresent,
+		];
 	}
 
-	/** Normalize workflow hash value read from the database
-	 * - returns empty string for null or empty values, and null for the -1 sentinel value used for missing workflow
+	/** Normalize workflow hash value read from the database.
+	 * Returns empty string for null/empty/invalid values, null for the -1 sentinel (confirmed missing).
 	 * @param mixed $value Workflow hash value read from the database
 	 * @return string|null Normalized workflow hash value
 	 */
@@ -31,6 +40,13 @@ class WorkflowStateManager {
 		$text = trim( ( string )$value );
 		if( $text === '-1' ) {
 			return null;
+		}
+
+		// Short purely-numeric values (e.g. "0") are invalid hashes written by an old
+		// code bug and should be treated the same as an absent entry so the scanner
+		// will re-process the image rather than treating it as already handled.
+		if( $text !== '' && ctype_digit( $text ) ) {
+			return '';
 		}
 
 		return $text;
@@ -53,25 +69,4 @@ class WorkflowStateManager {
 		return $text;
 	}
 
-	/** Describe workflow state from stored workflow and parameters hash values
-	 * @param mixed $workflowValue    Workflow hash value read from the database
-	 * @param mixed $parametersValue  Parameters hash value read from the database
-	 * @return array{hasWorkflowEntry: bool, workflowNull: bool, workflowHash: string, parametersHash: string, parametersPresent: bool}
-	 */
-	public static function describeWorkflowState( $workflowValue, $parametersValue ): array {
-		$normalizedWorkflowHash = self::normalizeWorkflowHashFromDb( $workflowValue );
-		$parametersHash         = self::normalizeParametersHash( $parametersValue );
-		$parametersPresent      = $parametersHash !== '';
-		$workflowNull           = $normalizedWorkflowHash === null;
-		$workflowHash           = is_string( $normalizedWorkflowHash ) ? $normalizedWorkflowHash : '';
-		$hasWorkflowEntry       = $workflowNull || $workflowHash !== '' || $parametersPresent;
-
-		return [
-			'hasWorkflowEntry' => $hasWorkflowEntry,
-			'workflowNull'     => $workflowNull,
-			'workflowHash'     => $workflowHash,
-			'parametersHash'   => $parametersHash,
-			'parametersPresent'=> $parametersPresent,
-		];
-	}
 }

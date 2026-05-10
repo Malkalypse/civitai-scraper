@@ -1,6 +1,6 @@
 import { AppState } from './app-context.js';
 import { applyWorkflowIdentityToCard,	applyImageCardFilters, loadVersionWorkflowFilters } from './filters.js';
-import { extractFilenameFromUrl, updateImageCardState, setFavoriteImageBorder, applyImageCardBorder } from './image-cache.js';
+import { updateImageCardState, setFavoriteImageBorder, applyImageCardBorder } from './image-cache.js';
 
 import { buildWorkflowAnalysisFromParametersText, buildInferredWorkflowJsonText, fetchParametersFallbackFromGenerationData, renderParametersAnalysis } from './workflow/parameters.js';
 import { buildWorkflowAnalysisData, computeWorkflowShapeHashFromAnalysisData, fetchNodePortDefinitions } from './workflow/analysis.js';
@@ -93,7 +93,6 @@ export async function retrySingleImageWorkflowScan( noWorkflowButton ) {
 
 	const imagePageUrl = workflowButton.dataset.imagePageUrl || '';
 	const fullImageUrl = workflowButton.dataset.fullImageUrl || '';
-	const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
 	const originalText = noWorkflowButton.textContent;
 
 	noWorkflowButton.disabled = true;
@@ -103,7 +102,7 @@ export async function retrySingleImageWorkflowScan( noWorkflowButton ) {
 		await extractAndPersistWorkflowForElement( workflowButton, { renderAnalysis: false } );
 	} catch( error ) {
 		console.warn( 'Single-image workflow rescan failed:', error );
-		await markWorkflowMissingForElement( workflowButton, imageFilename, error );
+		await markWorkflowMissingForElement( workflowButton, error );
 	} finally {
 		noWorkflowButton.disabled = false;
 		noWorkflowButton.textContent = originalText;
@@ -113,7 +112,7 @@ export async function retrySingleImageWorkflowScan( noWorkflowButton ) {
 
 /** Scan gallery cards and persist missing workflow/parameter state entries
  * @param {HTMLButtonElement|null}	button				trigger button for scan action
- * @param {{rescanAll?: boolean}}		[options={}]	scan options
+ * @param {{rescanAll?: boolean, keepOriginals?: boolean}}	[options={}]	scan options
  */
 export async function scanMissingImageWorkflows( button, options = {} ) {
 	if( !button ) {
@@ -121,6 +120,7 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 	}
 
 	const rescanAll = options?.rescanAll === true;
+	const keepOriginals = options?.keepOriginals === true;
 
 	const originalText = button.textContent;
 	button.disabled = true;
@@ -137,7 +137,6 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 		const imageId = Number( target?.dataset?.imageId || 0 );
 		const imagePageUrl = target?.dataset?.imagePageUrl || '';
 		const fullImageUrl = target?.dataset?.fullImageUrl || '';
-		const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl );
 
 		button.textContent = `Scanning ${scanned}/${targets.length}`;
 
@@ -145,18 +144,20 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 			if( !rescanAll ) {
 				const state = await fetchCachedWorkflowEntryState( imageId );
 				if( state.hasWorkflowEntry && !state.workflowNull ) {
+					const workflowState = state.parametersPresent ? 'parameters' : 'workflow';
+					applyWorkflowUiToAllCardsForImageId( imageId, workflowState, state.workflowHash );
 					skipped += 1;
 					continue;
 				}
 			}
 
-			await extractAndPersistWorkflowForElement( target, { renderAnalysis: false } );
+			await extractAndPersistWorkflowForElement( target, { renderAnalysis: false, keepOriginals } );
 			processed += 1;
 		} catch( error ) {
 			if( typeof error === 'object' && error !== null && error.errorCode === 'PARAMETERS_FOUND' ) {
 				try {
-					await markImageParametersAsPresent( imageId, imageFilename, '1' );
-					applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', '1' );
+					await markImageParametersAsPresent( imageId, '1' );
+					applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', 'P-1' );
 					processed += 1;
 					continue;
 				} catch( parameterPersistError ) {
@@ -167,7 +168,7 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 			}
 
 			if( shouldMarkWorkflowAsMissing( error ) ) {
-				await markWorkflowMissingForElement( target, imageFilename, error );
+				await markWorkflowMissingForElement( target, error );
 				processed += 1;
 			} else {
 				failures += 1;
@@ -178,6 +179,13 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 
 	button.disabled = false;
 	button.textContent = originalText;
+
+	try {
+		await refreshWorkflowFilterOptionsForCurrentVersion();
+	} catch( error ) {
+		console.warn( 'Could not refresh workflow filter options after scan:', error );
+	}
+
 	const modeLabel = rescanAll ? 'Workflow rescan complete.' : 'Workflow scan complete.';
 	alert( `${modeLabel} Scanned: ${scanned}, Updated: ${processed}, Skipped: ${skipped}, Errors: ${failures}` );
 }
@@ -205,7 +213,7 @@ function collectUniqueWorkflowButtons() {
 
 /** Fetch cached workflow state metadata for image id from backend
  * @param {number} imageId Image id to query
- * @returns {Promise<{hasWorkflowEntry: boolean, workflowNull: boolean, workflowHash: string, parametersPresent: boolean, parametersHash: string}>}
+ * @returns {Promise<{hasWorkflowEntry: boolean, workflowNull: boolean, workflowHash: string, parametersPresent: boolean}>}
  */
 async function fetchCachedWorkflowEntryState( imageId ) {
 	const response = await fetch( 'api/images/get_image_workflow_state.php', {
@@ -223,26 +231,24 @@ async function fetchCachedWorkflowEntryState( imageId ) {
 		hasWorkflowEntry: result.hasWorkflowEntry === true,
 		workflowNull: result.workflowNull === true,
 		workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : '',
-		parametersPresent: result.parametersPresent === true,
-		parametersHash: typeof result.parametersHash === 'string' ? result.parametersHash : ''
+		parametersPresent: result.parametersPresent === true
 	};
 }
 /** Persist missing-workflow state and update all matching card UIs when applicable
  * @param {HTMLElement|null}	referenceElement	element carrying image dataset metadata
- * @param {string}						imageFilename			best-effort source filename for persistence
- * @param {unknown}						error							upstream extraction error
+ * @param {unknown}						error						upstream extraction error
  */
-async function markWorkflowMissingForElement( referenceElement, imageFilename, error ) {
+async function markWorkflowMissingForElement( referenceElement, error ) {
 	const imageId = Number( referenceElement?.dataset?.imageId || 0 );
 
 	if( Number.isInteger( imageId ) && imageId > 0 && shouldMarkWorkflowAsMissing( error ) ) {
 		try {
-			await markImageWorkflowAsNull( imageId, imageFilename );
+			await markImageWorkflowAsNull( imageId );
 		} catch( markError ) {
 			console.warn( `Could not mark workflow state for image ${imageId}:`, markError );
 		}
 
-		applyWorkflowUiToAllCardsForImageId( imageId, 'missing' );
+		applyWorkflowUiToAllCardsForImageId( imageId, 'missing', '' );
 	}
 }
 /** Persist confirmed missing-workflow state for an image and refresh local caches.
@@ -274,17 +280,13 @@ export async function markImageWorkflowAsNull( imageId, imageFilename = '' ) {
 		throw new Error( result.error || `HTTP ${response.status}` );
 	}
 
-	if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
-		const cached = AppState.runtime.copyAllTextCache.get( imageId ) || {};
-		AppState.runtime.copyAllTextCache.set( imageId, {
-			...cached,
-			workflowPresent: false,
-			workflowNull: result.workflowNull === true,
-			workflowHash: '',
-			parametersPresent: false,
-			parametersHash: ''
-		} );
-	}
+	AppState.runtime.copyAllTextCache.set( imageId, {
+		...( AppState.runtime.copyAllTextCache.get( imageId ) || {} ),
+		workflowPresent: false,
+		workflowNull: result.workflowNull === true,
+		workflowHash: '',
+		parametersPresent: false
+	} );
 
 	try {
 		await refreshWorkflowFilterOptionsForCurrentVersion();
@@ -298,32 +300,38 @@ export async function markImageWorkflowAsNull( imageId, imageFilename = '' ) {
 
 /** Extract workflow or parameters from image element, persist state, and optionally render analysis
  * @param {HTMLElement|null}						referenceElement	source element containing image dataset metadata
- * @param {{renderAnalysis?: boolean}}	[options={}]			extraction options
- * @returns {Promise<{imageId: number, imageFilename: string, workflowText: string, workflowHash: string}>}
+ * @param {{renderAnalysis?: boolean, keepOriginals?: boolean}}	[options={}]			extraction options
+ * @returns {Promise<{imageId: number, workflowText: string, workflowHash: string}>}
  */
-async function extractAndPersistWorkflowForElement( referenceElement, { renderAnalysis = false } = {} ) {
+async function extractAndPersistWorkflowForElement( referenceElement, { renderAnalysis = false, keepOriginals = false } = {} ) {
 	const imageId = Number( referenceElement?.dataset?.imageId || 0 );
 	const imagePageUrl = referenceElement?.dataset?.imagePageUrl || '';
 	const fullImageUrl = referenceElement?.dataset?.fullImageUrl || '';
-	const imageFilename = extractFilenameFromUrl( fullImageUrl || imagePageUrl ); // image-cache.js
 	const card = referenceElement?.closest( '.image-card' ) || null;
 	const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 
 	const result = await fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl );
 	if( result.mode === 'parameters' ) {
-		if( Number.isInteger( imageId ) && imageId > 0 ) {
-			await markImageParametersAsPresent( imageId, imageFilename, '1', result.parametersText );
-			applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', '1' );
+		const modelFilename = buildModelFilenameForWorkflow( AppState.model.currentFilename, AppState.model.currentBaseModel );
+		const inferredWorkflow = buildWorkflowAnalysisFromParametersText( result.parametersText, imageId, modelFilename );
+		const inferredWorkflowJsonText = inferredWorkflow ? buildInferredWorkflowJsonText( inferredWorkflow ) : '';
+
+		let workflowHash = '';
+		if( inferredWorkflow && Number.isInteger( imageId ) && imageId > 0 ) {
+			const inferredHash = await computeWorkflowShapeHashFromAnalysisData( inferredWorkflow.analysisData );
+			workflowHash = `P-${inferredHash}`;
+			applyWorkflowIdentityToCard( referenceElement, workflowHash );
+			await markImageWorkflowAsPresent( imageId, workflowHash, inferredWorkflowJsonText, { keepOriginals } );
+			applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', workflowHash );
+		} else if( Number.isInteger( imageId ) && imageId > 0 ) {
+			await markImageParametersAsPresent( imageId, '1', result.parametersText );
+			applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', 'P-1' );
 		}
 
 		if( renderAnalysis ) {
-			const modelFilename = buildModelFilenameForWorkflow( AppState.model.currentFilename, AppState.model.currentBaseModel );
-			const inferredWorkflow = buildWorkflowAnalysisFromParametersText( result.parametersText, imageId, modelFilename ); // workflow/parameters.js
 			renderParametersAnalysis( imageId, result.parametersText ); // workflow/parameters.js
 
 			if( inferredWorkflow ) {
-				const inferredWorkflowJsonText = buildInferredWorkflowJsonText( inferredWorkflow ); // workflow/parameters.js
-
 				renderWorkflowAnalysis( // workflow/rendering.js
 					imageId,
 					inferredWorkflow.analysisData,
@@ -349,9 +357,8 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 
 		return {
 			imageId,
-			imageFilename,
-			workflowText: result.parametersText,
-			workflowHash: ''
+			workflowText: inferredWorkflowJsonText || result.parametersText,
+			workflowHash
 		};
 	}
 
@@ -360,8 +367,8 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 
 	if( Number.isInteger( imageId ) && imageId > 0 ) {
 		applyWorkflowIdentityToCard( referenceElement, workflowHash ); // filters.js
-		await markImageWorkflowAsPresent( imageId, imageFilename, workflowHash, result.workflowText );
-		applyWorkflowUiToAllCardsForImageId( imageId, 'workflow' );
+		await markImageWorkflowAsPresent( imageId, workflowHash, result.workflowText, { keepOriginals } );
+		applyWorkflowUiToAllCardsForImageId( imageId, 'workflow', workflowHash );
 	}
 
 	if( renderAnalysis ) {
@@ -376,7 +383,6 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 
 	return {
 		imageId,
-		imageFilename,
 		workflowText: result.workflowText,
 		workflowHash
 	};
@@ -524,12 +530,11 @@ export async function fetchImageWorkflowData( imageId, imagePageUrl, fullImageUr
 }
 /** Persist workflow-present state for an image and update local cached flags
  * @param {number} imageId						image id to update
- * @param {string} [imageFilename='']	optional source filename for storage
  * @param {string} [workflowHash='']	deterministic workflow-shape hash
  * @param {string} [workflowText='']	raw workflow JSON text for JSDC compression
  * @returns {Promise<boolean>} true on success
  */
-export async function markImageWorkflowAsPresent( imageId, imageFilename = '', workflowHash = '', workflowText = '' ) {
+export async function markImageWorkflowAsPresent( imageId, workflowHash = '', workflowText = '', { keepOriginals = false } = {} ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
 		return false;
 	}
@@ -551,8 +556,8 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 			workflow: workflowHashString,
 			modelId: AppState.model.currentModelId,
 			modelVersionId: AppState.model.currentVersionId,
-			imageFilename,
-			workflowText: workflowText || ''
+			workflowText: workflowText || '',
+			keepOriginals: keepOriginals === true
 		} )
 	} );
 
@@ -561,17 +566,13 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 		throw new Error( result.error || `HTTP ${response.status}` );
 	}
 
-	if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
-		const cached = AppState.runtime.copyAllTextCache.get( imageId ) || {};
-		AppState.runtime.copyAllTextCache.set( imageId, {
-			...cached,
-			workflowPresent: true,
-			workflowNull: false,
-			workflowHash: workflowHashString,
-			parametersPresent: false,
-			parametersHash: ''
-		} );
-	}
+	AppState.runtime.copyAllTextCache.set( imageId, {
+		...( AppState.runtime.copyAllTextCache.get( imageId ) || {} ),
+		workflowPresent: true,
+		workflowNull: false,
+		workflowHash: workflowHashString,
+		parametersPresent: workflowHashString.startsWith( 'P-' )
+	} );
 
 	try {
 		await refreshWorkflowFilterOptionsForCurrentVersion();
@@ -584,16 +585,16 @@ export async function markImageWorkflowAsPresent( imageId, imageFilename = '', w
 
 /** Persist parameters-only state for an image when no native Comfy workflow is available
  * @param {number} imageId							image id to update
- * @param {string} [imageFilename='']		optional source filename for storage
  * @param {string} [parametersHash='1'] lightweight parameters marker/hash
  * @returns {Promise<boolean>} true on success
  */
-export async function markImageParametersAsPresent( imageId, imageFilename = '', parametersHash = '1', parametersText = '' ) {
+export async function markImageParametersAsPresent( imageId, parametersHash = '1', parametersText = '' ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
 		return false;
 	}
 
 	const normalizedHash = String( parametersHash || '' ).trim() || '1';
+	const workflowHashString = 'P-' + normalizedHash;
 
 	const response = await fetch( 'api/images/update_image_workflow.php', {
 		method: 'POST',
@@ -604,7 +605,6 @@ export async function markImageParametersAsPresent( imageId, imageFilename = '',
 			workflow: normalizedHash,
 			modelId: AppState.model.currentModelId,
 			modelVersionId: AppState.model.currentVersionId,
-			imageFilename,
 			parametersText: parametersText || ''
 		} )
 	} );
@@ -614,17 +614,13 @@ export async function markImageParametersAsPresent( imageId, imageFilename = '',
 		throw new Error( result.error || `HTTP ${response.status}` );
 	}
 
-	if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
-		const cached = AppState.runtime.copyAllTextCache.get( imageId ) || {};
-		AppState.runtime.copyAllTextCache.set( imageId, {
-			...cached,
-			workflowPresent: false,
-			workflowNull: true,
-			workflowHash: '',
-			parametersPresent: true,
-			parametersHash: normalizedHash
-		} );
-	}
+	AppState.runtime.copyAllTextCache.set( imageId, {
+		...( AppState.runtime.copyAllTextCache.get( imageId ) || {} ),
+		workflowPresent: true,
+		workflowNull: false,
+		workflowHash: workflowHashString,
+		parametersPresent: true
+	} );
 
 	try {
 		await refreshWorkflowFilterOptionsForCurrentVersion();
@@ -660,17 +656,19 @@ export function shouldMarkWorkflowAsMissing( error ) {
  */
 export function isMissingWorkflowError( message ) {
 	const text = String( message || '' ).toLowerCase();
-	return text === 'no data';
+	return text === 'no data'
+		|| text.startsWith( 'could not resolve full-size image url' )
+		|| text.startsWith( 'failed to download image' )
+		|| text.startsWith( 'no workflow found' );
 }
 
 
 /** Apply workflow/parameters UI state updates to every card instance for one image id
- * @param {number}														imageId							image id to target
- * @param {'workflow'|'parameters'|'missing'}	workflowState				new workflow state
- * @param {string}														[parametersHash='']	optional parameters hash used by parameters state
+ * @param {number}														imageId				new workflow state
+ * @param {'workflow'|'parameters'|'missing'}	workflowState			new workflow state
  * @returns {void}
  */
-function applyWorkflowUiToAllCardsForImageId( imageId, workflowState, parametersHash = '' ) {
+function applyWorkflowUiToAllCardsForImageId( imageId, workflowState, workflowHash = '' ) {
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
 		return;
 	}
@@ -686,11 +684,12 @@ function applyWorkflowUiToAllCardsForImageId( imageId, workflowState, parameters
 			return;
 		}
 		seenCards.add( card );
+		applyWorkflowIdentityToCard( btn, workflowHash );
 		const favoriteCheckbox = card.querySelector( '.favorite-checkbox' );
 		if( workflowState === 'workflow' ) {
 			applyPresentWorkflowUi( btn, favoriteCheckbox );
 		} else if( workflowState === 'parameters' ) {
-			applyParametersWorkflowUi( btn, favoriteCheckbox, parametersHash );
+			applyParametersWorkflowUi( btn, favoriteCheckbox );
 		} else {
 			applyMissingWorkflowUi( btn, favoriteCheckbox );
 		}
@@ -711,8 +710,7 @@ function applyPresentWorkflowUi( referenceElement, favoriteCheckbox ) {
 			workflowLoaded: true,
 			workflowPresent: true,
 			workflowNull: false,
-			parametersPresent: false,
-			parametersHash: ''
+			parametersPresent: false
 		} );
 		setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
 	} else {
@@ -721,43 +719,37 @@ function applyPresentWorkflowUi( referenceElement, favoriteCheckbox ) {
 			workflowLoaded: true,
 			workflowPresent: true,
 			workflowNull: false,
-			parametersPresent: false,
-			parametersHash: ''
+			parametersPresent: false
 		} );
 	}
 
 	applyImageCardFilters();
 }
 
-/** Apply "parameters only" visuals/state to a single card
- * @param {HTMLElement|null}			referenceElement			element inside the card
- * @param {HTMLInputElement|null}	favoriteCheckbox			card favorite checkbox, if present
- * @param {string}								[parametersHash='1']	parameters hash/marker to persist in dataset
+/** Apply "parameters only" visuals/state to a single card.
+ * Parameters images use a P- prefixed workflow_hash, so workflowPresent is true and workflowNull is false.
+ * @param {HTMLElement|null}			referenceElement	element inside the card
+ * @param {HTMLInputElement|null}	favoriteCheckbox	card favorite checkbox, if present
  * @returns {void}
  */
-function applyParametersWorkflowUi( referenceElement, favoriteCheckbox, parametersHash = '1' ) {
-	const normalizedHash = String( parametersHash || '' ).trim() || '1';
-	applyWorkflowIdentityToCard( referenceElement, '' );
-
+function applyParametersWorkflowUi( referenceElement, favoriteCheckbox ) {
 	if( favoriteCheckbox ) {
-		favoriteCheckbox.dataset.workflowPresent = '0';
-		favoriteCheckbox.dataset.workflowNull = '1';
+		favoriteCheckbox.dataset.workflowPresent = '1';
+		favoriteCheckbox.dataset.workflowNull = '0';
 		favoriteCheckbox.dataset.parametersPresent = '1';
 		updateImageCardState( favoriteCheckbox, {
 			workflowLoaded: true,
-			workflowPresent: false,
-			workflowNull: true,
-			parametersPresent: true,
-			parametersHash: normalizedHash
+			workflowPresent: true,
+			workflowNull: false,
+			parametersPresent: true
 		} );
 		setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
 	} else {
 		updateImageCardState( referenceElement, {
 			workflowLoaded: true,
-			workflowPresent: false,
-			workflowNull: true,
-			parametersPresent: true,
-			parametersHash: normalizedHash
+			workflowPresent: true,
+			workflowNull: false,
+			parametersPresent: true
 		} );
 	}
 
@@ -770,8 +762,6 @@ function applyParametersWorkflowUi( referenceElement, favoriteCheckbox, paramete
  * @returns {void}
  */
 function applyMissingWorkflowUi( referenceElement, favoriteCheckbox ) {
-	applyWorkflowIdentityToCard( referenceElement, '' );
-
 	if( favoriteCheckbox ) {
 		favoriteCheckbox.dataset.workflowPresent = '0';
 		favoriteCheckbox.dataset.workflowNull = '1';
@@ -779,8 +769,7 @@ function applyMissingWorkflowUi( referenceElement, favoriteCheckbox ) {
 			workflowLoaded: true,
 			workflowPresent: false,
 			workflowNull: true,
-			parametersPresent: false,
-			parametersHash: ''
+			parametersPresent: false
 		} );
 		setFavoriteImageBorder( favoriteCheckbox, favoriteCheckbox.checked === true );
 	} else {
@@ -789,15 +778,14 @@ function applyMissingWorkflowUi( referenceElement, favoriteCheckbox ) {
 			workflowLoaded: true,
 			workflowPresent: false,
 			workflowNull: true,
-			parametersPresent: false,
-			parametersHash: ''
+			parametersPresent: false
 		} );
 	}
 }
 
 
 /** Refresh workflow filter options after workflow state changes */
-async function refreshWorkflowFilterOptionsForCurrentVersion() { 
+async function refreshWorkflowFilterOptionsForCurrentVersion() {
 	const versionId = Number( AppState.model.currentVersionId || 0 );
 	if( !Number.isInteger( versionId ) || versionId <= 0 ) {
 		return;

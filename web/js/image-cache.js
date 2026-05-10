@@ -44,12 +44,12 @@ export async function downloadAndCache( remoteUrl, cacheLookupUrl = null ) {
 		const result = await response.json();
 
 		if( result.localUrl ) {
-			return result.localUrl;
+			return { url: result.localUrl, wasDownloaded: result.downloaded === true };
 		}
-		return remoteUrl;
+		return { url: remoteUrl, wasDownloaded: false };
 	} catch( error ) {
 		console.error( 'Download failed:', error );
-		return remoteUrl;
+		return { url: remoteUrl, wasDownloaded: false };
 	}
 }
 
@@ -62,7 +62,6 @@ export function syncCopyAllPreviewWidth( card ) {
 		return;
 	}
 
-	const previews = card.querySelectorAll( '.generation-preview' );
 	const workflowActions = card.querySelector( '.workflow-actions' );
 	const copyBtn = card.querySelector( '.workflow-copy-btn' );
 	const analyzeBtn = card.querySelector( '.workflow-analyze-btn' );
@@ -75,11 +74,6 @@ export function syncCopyAllPreviewWidth( card ) {
 	const applyWidth = () => {
 		const renderedWidth = image.clientWidth;
 		if( renderedWidth > 0 ) {
-			previews.forEach( preview => {
-				preview.style.width = renderedWidth + 'px';
-				autosizeCopyAllPreview( preview );
-			} );
-
 			if( workflowActions ) {
 				const stackedButtons = String( AppState.ui.thumbnailSize ) === '150';
 				workflowActions.style.width = renderedWidth + 'px';
@@ -107,37 +101,29 @@ export function syncCopyAllPreviewWidth( card ) {
 }
 
 
-/** Queue hydration of generation preview text for a given image, ensuring that only a limited number of concurrent requests are active and that the correct preview is updated when the data is returned
- * @param {HTMLTextAreaElement} promptTextarea the textarea element to update with the generation preview text
+/** Queue hydration of favorite/workflow state for a given image card, ensuring that only a limited number of concurrent requests are active
  * @param {HTMLInputElement|null} favoriteCheckbox optional checkbox element associated with the image card, used to update favorite state and workflow/parameters presence indicators
  * @param {string} imagePageUrl URL of the image page to extract the image ID from for fetching generation data
  * @param {string} imageLoadToken a token representing the current image load session, used to ensure that outdated requests do not update the UI
  * @param {Object} metadata optional additional metadata to include when fetching generation data, such as model ID, version ID, or image filename
  */
-export function queueCopyAllPreviewHydration( promptTextarea, favoriteCheckbox, imagePageUrl, imageLoadToken, metadata = {} ) {
-	if( !promptTextarea ) {
-		return;
-	}
-
+export function queueCopyAllPreviewHydration( favoriteCheckbox, imagePageUrl, imageLoadToken, metadata = {} ) {
 	const imageId = imageIdFromUrl( imagePageUrl );
 	if( !imageId ) {
-		promptTextarea.value = 'Prompt unavailable';
 		if( favoriteCheckbox ) {
 			favoriteCheckbox.checked = false;
 		}
 		return;
 	}
 
-	promptTextarea.value = 'Loading prompt...';
-	autosizeCopyAllPreview( promptTextarea );
-	AppState.runtime.copyAllTextQueue.push( { promptTextarea, favoriteCheckbox, imageId, imageLoadToken, metadata } );
+	AppState.runtime.copyAllTextQueue.push( { favoriteCheckbox, imageId, imageLoadToken, metadata } );
 	processCopyAllPreviewQueue();
 }
 /** Process the queue of pending generation preview hydration jobs, ensuring that only a limited number of concurrent requests are active and that the correct preview is updated when the data is returned */
 export function processCopyAllPreviewQueue() {
 	while( AppState.runtime.copyAllActiveCount < COPY_ALL_MAX_CONCURRENCY && AppState.runtime.copyAllTextQueue.length > 0 ) {
 		const job = AppState.runtime.copyAllTextQueue.shift();
-		if( !job || !job.promptTextarea ) {
+		if( !job ) {
 			continue;
 		}
 
@@ -155,38 +141,40 @@ export function processCopyAllPreviewQueue() {
 					return;
 				}
 
-				if( !document.body.contains( job.promptTextarea ) ) {
-					return;
-				}
+				// Re-read cache to pick up any values written by a concurrent scan that completed
+				// while the HTTP response for this hydration job was in-flight or queued.
+				const fresh = AppState.runtime.copyAllTextCache.get( job.imageId ) || payload;
 
-				const promptText = typeof payload?.promptText === 'string' ? payload.promptText.trim() : '';
-				const favorite = payload?.favorite === true;
-				const workflowPresent = payload?.workflowPresent === true;
-				const workflowNull = payload?.workflowNull === true;
-				const workflowHash = typeof payload?.workflowHash === 'string' ? payload.workflowHash : '';
-				const parametersPresent = payload?.parametersPresent === true;
-				const parametersHash = typeof payload?.parametersHash === 'string' ? payload.parametersHash : '';
+				const favorite = fresh?.favorite === true;
+				const workflowPresent = fresh?.workflowPresent === true;
+				const workflowNull = fresh?.workflowNull === true;
+				const workflowHash = typeof fresh?.workflowHash === 'string' ? fresh.workflowHash : '';
+				const parametersPresent = fresh?.parametersPresent === true;
 
-				job.promptTextarea.value = promptText !== '' ? promptText : 'Prompt unavailable';
-				if( job.favoriteCheckbox ) {
-					job.favoriteCheckbox.checked = favorite;
-					job.favoriteCheckbox.dataset.workflowPresent = workflowPresent ? '1' : '0';
-					job.favoriteCheckbox.dataset.workflowNull = workflowNull ? '1' : '0';
-					job.favoriteCheckbox.dataset.parametersPresent = parametersPresent ? '1' : '0';
+			if( job.favoriteCheckbox ) {
+				job.favoriteCheckbox.checked = favorite;
+				job.favoriteCheckbox.dataset.workflowPresent = workflowPresent ? '1' : '0';
+				job.favoriteCheckbox.dataset.workflowNull = workflowNull ? '1' : '0';
+				job.favoriteCheckbox.dataset.parametersPresent = parametersPresent ? '1' : '0';
+
+				// Only update the card's workflow hash if the incoming value is non-empty,
+				// or the card has not been loaded by a concurrent scan (workflowLoaded = 0).
+				const card = job.favoriteCheckbox.closest( '.image-card' );
+				const cardWorkflowLoaded = card ? card.dataset.workflowLoaded === '1' : false;
+				if( workflowHash !== '' || !cardWorkflowLoaded ) {
 					applyWorkflowIdentityToCard( job.favoriteCheckbox, workflowHash );
-					updateImageCardState( job.favoriteCheckbox, {
-						favoriteLoaded: true,
-						favorite,
-						workflowLoaded: true,
-						workflowPresent,
-						workflowNull,
-						parametersPresent,
-						parametersHash
-					} );
-					setFavoriteImageBorder( job.favoriteCheckbox, favorite );
 				}
 
-				autosizeCopyAllPreview( job.promptTextarea );
+				updateImageCardState( job.favoriteCheckbox, {
+					favoriteLoaded: true,
+					favorite,
+					workflowLoaded: true,
+					workflowPresent,
+					workflowNull,
+					parametersPresent
+				} );
+				setFavoriteImageBorder( job.favoriteCheckbox, favorite );
+			}
 			} finally {
 				AppState.runtime.copyAllActiveCount--;
 				processCopyAllPreviewQueue();
@@ -194,20 +182,20 @@ export function processCopyAllPreviewQueue() {
 		} )();
 	}
 }
-/** Fetch the generation prompt text and related metadata for a given image ID, using caching to avoid redundant requests
+/** Fetch generation metadata for a given image ID, using caching to avoid redundant requests
  * @param {number} imageId ID of the image to fetch generation data for
- * @param {Object} options optional parameters such as modelId, modelVersionId, and imageFilename to include in the request for more accurate caching
- * @returns {Promise<{promptText: string, copyAllText: string, favorite: boolean, workflowPresent: boolean, workflowNull: boolean, workflowHash: string, parametersPresent: boolean, parametersHash: string}>} Object containing the generation prompt text and related metadata
+ * @param {Object} options optional parameters such as modelId and modelVersionId to include in the request for more accurate caching
+ * @returns {Promise<{copyAllText: string, favorite: boolean, workflowPresent: boolean, workflowNull: boolean, workflowHash: string, parametersPresent: boolean}>} Object containing generation metadata
  */
 export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
-	const { modelId = null, modelVersionId = null, imageFilename = '' } = options;
+	const { modelId = null, modelVersionId = null } = options;
 
 	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
-		return { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false, parametersHash: '' };
+		return { copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false };
 	}
 
 	if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
-		return AppState.runtime.copyAllTextCache.get( imageId ) || { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false, parametersHash: '' };
+		return AppState.runtime.copyAllTextCache.get( imageId ) || { copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false };
 	}
 
 	if( AppState.runtime.copyAllTextPending.has( imageId ) ) {
@@ -223,9 +211,6 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 			if( modelVersionId !== null && modelVersionId !== undefined && String( modelVersionId ).trim() !== '' ) {
 				requestBody.modelVersionId = String( modelVersionId );
 			}
-			if( imageFilename && String( imageFilename ).trim() !== '' ) {
-				requestBody.imageFilename = String( imageFilename ).trim();
-			}
 
 			const response = await fetch( 'api/images/get_image_generation_data.php', {
 				method: 'POST',
@@ -238,21 +223,22 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 				throw new Error( result.error || `HTTP ${response.status}` );
 			}
 
-			const payload = {
-				promptText: typeof result.promptText === 'string' ? result.promptText : '',
+			const fetchedPayload = {
 				copyAllText: typeof result.copyAllText === 'string' ? result.copyAllText : '',
 				favorite: result.favorite === true,
 				workflowPresent: result.workflowPresent === true,
 				workflowNull: result.workflowNull === true,
 				workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : '',
-				parametersPresent: result.parametersPresent === true,
-				parametersHash: typeof result.parametersHash === 'string' ? result.parametersHash : ''
+				parametersPresent: result.parametersPresent === true
 			};
-			AppState.runtime.copyAllTextCache.set( imageId, payload );
-			return payload;
+			// Only cache if a concurrent scan hasn't already written a fresher value
+			if( !AppState.runtime.copyAllTextCache.has( imageId ) ) {
+				AppState.runtime.copyAllTextCache.set( imageId, fetchedPayload );
+			}
+			return AppState.runtime.copyAllTextCache.get( imageId ) || fetchedPayload;
 		} catch( error ) {
 			console.warn( `Could not fetch generation data for image ${imageId}:`, error );
-			const emptyPayload = { promptText: '', copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false, parametersHash: '' };
+			const emptyPayload = { copyAllText: '', favorite: false, workflowPresent: false, workflowNull: false, workflowHash: '', parametersPresent: false };
 			return emptyPayload;
 		} finally {
 			AppState.runtime.copyAllTextPending.delete( imageId );
@@ -261,19 +247,6 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 
 	AppState.runtime.copyAllTextPending.set( imageId, requestPromise );
 	return requestPromise;
-}
-
-
-/** Autosize a generation preview textarea to fit its content by setting its height to auto and then to its scrollHeight
- * @param {HTMLTextAreaElement} textarea the textarea element to autosize
- */
-export function autosizeCopyAllPreview( textarea ) {
-	if( !textarea ) {
-		return;
-	}
-
-	textarea.style.height = 'auto';
-	textarea.style.height = textarea.scrollHeight + 'px';
 }
 
 
@@ -303,8 +276,7 @@ export async function toggleImageFavorite( checkbox ) {
 				imageId,
 				favorite,
 				modelId: AppState.model.currentModelId,
-				modelVersionId: AppState.model.currentVersionId,
-				imageFilename: checkbox.dataset.imageFilename || ''
+				modelVersionId: AppState.model.currentVersionId
 			} )
 		} );
 
@@ -365,13 +337,13 @@ export function applyImageCardBorder( referenceElement, isFavorite = false, work
 		return;
 	}
 
-	if( workflowPresent ) {
-		image.style.borderColor = '#419f3f';
+	if( parametersPresent ) {
+		image.style.borderColor = 'rgb(12, 133, 153)';
 		return;
 	}
 
-	if( parametersPresent ) {
-		image.style.borderColor = 'rgb(12, 133, 153)';
+	if( workflowPresent ) {
+		image.style.borderColor = '#419f3f';
 		return;
 	}
 
@@ -386,9 +358,9 @@ export function applyImageCardBorder( referenceElement, isFavorite = false, work
 
 /** Update the state of an image card based on workflow and parameters presence indicators, and update the visibility of workflow action buttons accordingly
  * @param {HTMLElement} referenceElement an element within the image card to use as a reference for finding the card and updating its state, such as the favorite checkbox
- * @param {Object} options optional parameters for updating the card state, such as favoriteLoaded, favorite, workflowLoaded, workflowPresent, workflowNull, parametersPresent, and parametersHash
+ * @param {Object} options optional parameters for updating the card state, such as favoriteLoaded, favorite, workflowLoaded, workflowPresent, workflowNull, and parametersPresent
  */
-export function updateImageCardState( referenceElement, { favoriteLoaded = null, favorite = null, workflowLoaded = null, workflowPresent = null, workflowNull = null, parametersPresent = null, parametersHash = null } = {} ) {
+export function updateImageCardState( referenceElement, { favoriteLoaded = null, favorite = null, workflowLoaded = null, workflowPresent = null, workflowNull = null, parametersPresent = null } = {} ) {
 	if( !referenceElement ) {
 		return;
 	}
@@ -420,10 +392,6 @@ export function updateImageCardState( referenceElement, { favoriteLoaded = null,
 
 	if( parametersPresent !== null ) {
 		card.dataset.parametersPresent = parametersPresent ? '1' : '0';
-	}
-
-	if( parametersHash !== null ) {
-		card.dataset.parametersHash = String( parametersHash || '' ).trim();
 	}
 
 	updateWorkflowActionsVisibility( referenceElement );

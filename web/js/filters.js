@@ -162,6 +162,24 @@ export async function loadVersionWorkflowFilters( versionId ) {
 }
 
 
+/** Count the number of unique image IDs in the DOM that have a given workflow hash key
+ * @param {string} filterKey workflow hash key to match against card.dataset.workflowHash
+ * @returns {number} count of unique image IDs matching the key
+ */
+function countUniqueImageIdsForHash( filterKey ) {
+	const seen = new Set();
+	document.querySelectorAll( '.image-card' ).forEach( card => {
+		const cardKey = buildWorkflowFilterKey( card.dataset.workflowHash || '' );
+		if( cardKey === filterKey ) {
+			const imageId = card.querySelector( '[data-image-id]' )?.dataset.imageId;
+			if( imageId ) {
+				seen.add( imageId );
+			}
+		}
+	} );
+	return seen.size;
+}
+
 /** Render workflow filter buttons based on available options */
 export function renderWorkflowFilterButtons() {
 	const container = document.getElementById( 'workflowFilterButtons' );
@@ -187,7 +205,9 @@ export function renderWorkflowFilterButtons() {
 			btn.textContent = 'All';
 		} else {
 			const shortHash = option.workflowHash.length > 12 ? `${option.workflowHash.slice( 0, 12 )}...` : option.workflowHash;
-			btn.textContent = option.imageCount > 0 ? `${shortHash} (${option.imageCount})` : shortHash;
+			const domCount = countUniqueImageIdsForHash( option.key );
+			const displayCount = domCount > 0 ? domCount : option.imageCount;
+			btn.textContent = displayCount > 0 ? `${shortHash} (${displayCount})` : shortHash;
 			btn.title = option.workflowHash;
 		}
 
@@ -232,15 +252,14 @@ export function applyImageCardFilters() {
 }
 
 
+
+
 /** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
  * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
  * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
  */
 export function toggleGenerationPreview( type ) {
-	if( type === 'prompts' ) {
-		AppState.ui.generationPromptsHidden = !AppState.ui.generationPromptsHidden;
-		localStorage.setItem( 'generationPromptsHidden', AppState.ui.generationPromptsHidden ? 'true' : 'false' );
-	} else if( type === 'non-workflow' ) {
+	if( type === 'non-workflow' ) {
 		AppState.ui.hideNonWorkflowImages = !AppState.ui.hideNonWorkflowImages;
 		localStorage.setItem( 'hideNonWorkflowImages', AppState.ui.hideNonWorkflowImages ? 'true' : 'false' );
 		applyImageCardFilters();
@@ -250,29 +269,11 @@ export function toggleGenerationPreview( type ) {
 		localStorage.setItem( 'hideNonFavoriteImages', AppState.ui.hideNonFavoriteImages ? 'true' : 'false' );
 		applyImageCardFilters();
 		return;
-	} else {
-		return;
 	}
-
-	applyGenerationPreviewVisibility();
 }
 /** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
  * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
  * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
- */
-export function applyGenerationPreviewVisibility() {
-	document.querySelectorAll( '.generation-prompt-preview' ).forEach( textarea => {
-		textarea.style.display = AppState.ui.generationPromptsHidden ? 'none' : '';
-	} );
-
-	updateGenerationPreviewToggleButtons();
-	applyImageCardFilters();
-}
-
-
-/** Build a filter key for workflow filtering based on the workflow hash, normalizing it to ensure consistent matching
- * @param {string} workflowHash raw workflow hash to build filter key from
- * @returns {string} normalized filter key for workflow filtering
  */
 export function buildWorkflowFilterKey( workflowHash ) {
 	const hash = workflowHash === null || workflowHash === undefined ? '' : String( workflowHash ).trim();
@@ -285,13 +286,8 @@ export function buildWorkflowFilterKey( workflowHash ) {
  * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
  */
 export function updateGenerationPreviewToggleButtons() {
-	const promptsBtn = document.getElementById( 'generationTogglePromptsBtn' );
 	const nonWorkflowBtn = document.getElementById( 'generationToggleNonWorkflowBtn' );
 	const nonFavoritesBtn = document.getElementById( 'generationToggleNonFavoritesBtn' );
-
-	if( promptsBtn ) {
-		promptsBtn.textContent = AppState.ui.generationPromptsHidden ? 'Show Prompts' : 'Hide Prompts';
-	}
 
 	if( nonWorkflowBtn ) {
 		nonWorkflowBtn.textContent = AppState.ui.hideNonWorkflowImages ? 'Show Non-Workflow' : 'Hide Non-Workflow';

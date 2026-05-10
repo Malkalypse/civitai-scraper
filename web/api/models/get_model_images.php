@@ -347,6 +347,54 @@ try {
 		$cursor								= $nextCursor;
 	}
 	
+	// Supplement gallery with images known from our local DB that weren't returned
+	// by Civitai's tRPC API — typically older images pushed beyond the pagination window.
+	try {
+		$db = api_db_connect();
+		if( !$db->connect_error ) {
+			$db->set_charset( 'utf8mb4' );
+			$stmt = $db->prepare(
+				'SELECT image_id FROM images WHERE model_version_id = ? ' .
+				'AND workflow_hash IS NOT NULL AND workflow_hash <> "" AND workflow_hash <> "-1"'
+			);
+			if( $stmt ) {
+				$versionIdInt = (int)$versionId;
+				$stmt->bind_param( 'i', $versionIdInt );
+				$stmt->execute();
+				$dbResult = $stmt->get_result();
+				$dbKnownIds = [];
+				while( $row = $dbResult->fetch_assoc() ) {
+					$dbKnownIds[ (int)$row['image_id'] ] = true;
+				}
+				$stmt->close();
+			}
+			$db->close();
+
+			// Build set of image page IDs already loaded from Civitai (carousel + gallery)
+			$loadedPageIds = [];
+			foreach( array_merge( $carouselImages, $galleryImages ) as $img ) {
+				if( isset( $img['linkUrl'] ) ) {
+					$pid = extractImagePageIdFromString( $img['linkUrl'] );
+					if( $pid !== null ) {
+						$loadedPageIds[$pid] = true;
+					}
+				}
+			}
+
+			// Add placeholder entries for DB-known images absent from Civitai's response
+			foreach( array_keys( $dbKnownIds ) as $missingId ) {
+				if( !isset( $loadedPageIds[$missingId] ) ) {
+					$galleryImages[] = [
+						'linkUrl'				=> SITE_URL_IMAGES . '/' . $missingId,
+						'missingFromGallery'	=> true
+					];
+				}
+			}
+		}
+	} catch( Throwable $e ) {
+		error_log( 'DB gallery supplement failed: ' . $e->getMessage() );
+	}
+
 	ApiResponse::sendJson( [
 		'success' => true,
 		'carouselImages'			=> $carouselImages,

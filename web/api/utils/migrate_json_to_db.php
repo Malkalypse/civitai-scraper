@@ -55,7 +55,6 @@ foreach( $files as $filename ) {
   $modelId        = isset( $payload['modelId'] )        ? ( int )$payload['modelId'] : 0;
   $modelVersionId = isset( $payload['modelVersionId'] ) ? ( int )$payload['modelVersionId'] : 0;
   $imageFilename  = isset( $payload['imageFilename'] )  ? trim( (string )$payload['imageFilename'] ) : '';
-  $promptText     = isset( $payload['promptText'] )     ? ( string )$payload['promptText'] : '';
   $copyAllText    = isset( $payload['copyAllText'] )    ? ( string )$payload['copyAllText'] : '';
   $favorite       = isset( $payload['Favorite'] )       ? ( int )$payload['Favorite'] : 0;
   $workflowHash   = null;
@@ -91,8 +90,8 @@ foreach( $files as $filename ) {
 
   // Insert into images table
   $insertSql = 'INSERT INTO images ' .
-               '(image_id, model_id, model_version_id, image_filename, prompt_text, copy_all_text, workflow_hash, favorite) ' .
-               'VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+               '(image_id, model_id, model_version_id, copy_all_text, workflow_hash, favorite) ' .
+               'VALUES (?, ?, ?, ?, ?, ?)';
 
   $insertStmt = $db->prepare( $insertSql );
   if( !$insertStmt ) {
@@ -100,8 +99,8 @@ foreach( $files as $filename ) {
     continue;
   }
 
-  $insertStmt->bind_param( 'iiissssi', $imageId, $modelId, $modelVersionId, $imageFilename, 
-                          $promptText, $copyAllText, $workflowHash, $favorite);
+  $insertStmt->bind_param( 'iiissi', $imageId, $modelId, $modelVersionId,
+                          $copyAllText, $workflowHash, $favorite);
   
   if( !$insertStmt->execute() ) {
     $errors[] = "Execute failed for image $imageId: " . $insertStmt->error;

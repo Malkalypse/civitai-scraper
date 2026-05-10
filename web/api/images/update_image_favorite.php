@@ -9,7 +9,6 @@ $imageId        = isset( $input['imageId'] ) ? ( int )$input['imageId'] : 0;
 $favoriteInput  = $input['favorite'] ?? null;
 $modelId        = isset( $input['modelId'] ) ? ( string )$input['modelId'] : '';
 $modelVersionId = isset( $input['modelVersionId'] ) ? ( string )$input['modelVersionId'] : '';
-$imageFilename  = isset( $input['imageFilename'] ) ? trim( ( string )$input['imageFilename'] ) : '';
 
 if( $imageId <= 0 ) {
   ApiResponse::sendFailure( 'Missing or invalid imageId' );
@@ -60,9 +59,6 @@ try {
   }
   if( $modelVersionId !== '' ) {
     $payload['modelVersionId'] = $modelVersionId;
-  }
-  if( $imageFilename !== '' ) {
-    $payload['imageFilename'] = $imageFilename;
   }
   if( isset( $payload['sourceUrl'] ) ) {
     unset( $payload['sourceUrl'] );

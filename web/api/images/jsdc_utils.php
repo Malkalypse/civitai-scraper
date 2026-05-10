@@ -228,6 +228,11 @@ function _jsdc_extract_delta( mixed $templateNode, mixed $actualNode ): mixed {
 		foreach( $templateNode as $i => $tElem ) {
 			if( $tElem === JSDC_PLACEHOLDER ) {
 				$sparse[] = [ $i, $actualNode[ $i ] ?? JSDC_PLACEHOLDER ];
+			} else {
+				$sub = _jsdc_extract_delta( $tElem, $actualNode[ $i ] ?? JSDC_PLACEHOLDER );
+				if( $sub !== null ) {
+					$sparse[] = [ $i, $sub ];
+				}
 			}
 		}
 		return $sparse !== [] ? $sparse : null;
@@ -291,6 +296,9 @@ function jsdc_store_workflow( string $cacheDir, string $groupHash, int $imageId,
 		mkdir( $cacheDir, 0755, true );
 	}
 
+	// Detect whether this is the first image in the group (before building the template)
+	$isFirstInGroup = !is_file( $cacheDir . '/' . $groupHash . '.json' );
+
 	// Steps 2 & 3: build/update dict and template, get abbreviated workflow
 	$abbrevMap      = jsdc_build_or_update_dict( $cacheDir, $groupHash, $workflow );
 	$abbrevWorkflow = jsdc_abbreviate_keys( $workflow, $abbrevMap );
@@ -301,8 +309,193 @@ function jsdc_store_workflow( string $cacheDir, string $groupHash, int $imageId,
 	$jsdcPath = $cacheDir . '/' . $imageId . '.jsdc';
 	file_put_contents( $jsdcPath, json_encode( $delta, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES ) );
 
+	// The first image in a group initialises the template with its own values, so its
+	// delta is always empty. If later images cause ? placeholders to appear in the template,
+	// the seed's delta can no longer fill them. Save the original so restoration always works.
+	if( $isFirstInGroup ) {
+		$originalsDir = $cacheDir . '/originals';
+		if( !is_dir( $originalsDir ) ) {
+			mkdir( $originalsDir, 0755, true );
+		}
+		file_put_contents(
+			$originalsDir . '/' . $imageId . '.json',
+			json_encode( $workflow, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE )
+		);
+	}
+
 	// Index entry (skip if already present, e.g. on re-scan)
 	if( !jsdc_index_has_entry( $cacheDir, $imageId ) ) {
 		jsdc_append_index( $cacheDir, $imageId, $groupHash );
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Restore: apply delta + expand keys (port of restore.py)
+// ---------------------------------------------------------------------------
+
+/** Look up which group hash an image belongs to via index.txt.
+ *
+ * @param string $cacheDir Absolute path to cache/workflows/
+ * @param int    $imageId  Civitai image ID
+ * @return string|null Group hash, or null if not found
+ */
+function jsdc_lookup_index( string $cacheDir, int $imageId ): ?string {
+	$indexPath = $cacheDir . '/index.txt';
+	if( !is_file( $indexPath ) ) {
+		return null;
+	}
+	$needle = $imageId . '.json' . "\t";
+	foreach( file( $indexPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES ) as $line ) {
+		if( str_starts_with( $line, $needle ) ) {
+			$parts = explode( "\t", $line, 2 );
+			return isset( $parts[1] ) ? trim( $parts[1] ) : null;
+		}
+	}
+	return null;
+}
+
+/** Recursively fill template JSDC_PLACEHOLDER values using a delta.
+ *
+ * - Scalars: if template === '?' return delta value, otherwise keep template value.
+ * - Dicts: recurse per key; delta supplies overrides for '?' leaf positions.
+ * - Lists: delta is a sparse array of [index, value] pairs covering only '?' positions.
+ *
+ * @param mixed $templateNode Node from the group template
+ * @param mixed $deltaNode    Corresponding node from the per-file delta (may be null)
+ * @return mixed Filled node
+ */
+function _jsdc_apply_delta( mixed $templateNode, mixed $deltaNode ): mixed {
+	if( $templateNode === JSDC_PLACEHOLDER ) {
+		return $deltaNode;
+	}
+
+	if( is_array( $templateNode ) && !array_is_list( $templateNode ) ) {
+		$result = [];
+		foreach( $templateNode as $k => $tVal ) {
+			$dVal     = is_array( $deltaNode ) ? ( $deltaNode[ $k ] ?? null ) : null;
+			$result[ $k ] = _jsdc_apply_delta( $tVal, $dVal );
+		}
+		return $result;
+	}
+
+	if( is_array( $templateNode ) && array_is_list( $templateNode ) ) {
+		// Delta is sparse: [[index, value], ...]
+		$overrides = [];
+		if( is_array( $deltaNode ) ) {
+			foreach( $deltaNode as $entry ) {
+				if( is_array( $entry ) && count( $entry ) === 2 ) {
+					$overrides[ (int)$entry[0] ] = $entry[1];
+				}
+			}
+		}
+		$result = [];
+		foreach( $templateNode as $i => $tElem ) {
+			if( $tElem === JSDC_PLACEHOLDER ) {
+				$result[] = $overrides[ $i ] ?? JSDC_PLACEHOLDER;
+			} else {
+				$result[] = _jsdc_apply_delta( $tElem, $overrides[ $i ] ?? null );
+			}
+		}
+		return $result;
+	}
+
+	return $templateNode;
+}
+
+/** Recursively expand abbreviated dict keys back to their original names.
+ *
+ * @param mixed $data      Data with abbreviated keys
+ * @param array $invAbbrev Inverted abbreviation map: abbrev → original key
+ * @return mixed Data with original keys restored
+ */
+function _jsdc_expand_keys( mixed $data, array $invAbbrev ): mixed {
+	if( is_array( $data ) && !array_is_list( $data ) ) {
+		$result = [];
+		foreach( $data as $k => $v ) {
+			$origKey          = $invAbbrev[ $k ] ?? $k;
+			$result[ $origKey ] = _jsdc_expand_keys( $v, $invAbbrev );
+		}
+		return $result;
+	}
+	if( is_array( $data ) ) {
+		return array_map( static fn( $item ) => _jsdc_expand_keys( $item, $invAbbrev ), $data );
+	}
+	return $data;
+}
+
+/** Return true if $data contains any '?' placeholder values anywhere in its structure. */
+function _jsdc_has_placeholder( mixed $data ): bool {
+	if( $data === JSDC_PLACEHOLDER ) {
+		return true;
+	}
+	if( is_array( $data ) ) {
+		foreach( $data as $v ) {
+			if( _jsdc_has_placeholder( $v ) ) {
+				return true;
+			}
+		}
+	}
+	return false;
+}
+
+/** Restore the original workflow array from JSDC cache files.
+ *
+ * Reads index.txt to find the group hash, then loads <hash>.dict,
+ * <hash>.json, and <imageId>.jsdc to reconstruct the original workflow.
+ *
+ * Returns null if the image is not in the cache or if the stored delta
+ * is incomplete (e.g. compressed before the list-recursion bug was fixed).
+ *
+ * @param string $cacheDir Absolute path to cache/workflows/
+ * @param int    $imageId  Civitai image ID
+ * @return array|null Restored workflow as a PHP array, or null if not cached
+ */
+function jsdc_restore_workflow( string $cacheDir, int $imageId ): ?array {
+	// 1. Check for original file (written when keepOriginals was used)
+	$originalPath = $cacheDir . '/originals/' . $imageId . '.json';
+	if( is_file( $originalPath ) ) {
+		$decoded = json_decode( file_get_contents( $originalPath ), true );
+		if( is_array( $decoded ) ) {
+			return $decoded;
+		}
+	}
+
+	// 2. Look up group hash in index
+	$groupHash = jsdc_lookup_index( $cacheDir, $imageId );
+	if( $groupHash === null ) {
+		return null;
+	}
+
+	$dictPath     = $cacheDir . '/' . $groupHash . '.dict';
+	$templatePath = $cacheDir . '/' . $groupHash . '.json';
+	$deltaPath    = $cacheDir . '/' . $imageId . '.jsdc';
+
+	if( !is_file( $dictPath ) || !is_file( $templatePath ) || !is_file( $deltaPath ) ) {
+		return null;
+	}
+
+	// 3. Load artifacts
+	$abbrevMap = json_decode( file_get_contents( $dictPath ), true );
+	$template  = json_decode( file_get_contents( $templatePath ), true );
+	$delta     = json_decode( file_get_contents( $deltaPath ), true );
+
+	if( !is_array( $abbrevMap ) || !is_array( $template ) || !is_array( $delta ) ) {
+		return null;
+	}
+
+	// 4. Fill '?' placeholders from the delta
+	$filled = _jsdc_apply_delta( $template, $delta );
+
+	// 5. Expand abbreviated keys back to original names
+	$invAbbrev = array_flip( $abbrevMap );
+	$restored  = _jsdc_expand_keys( $filled, $invAbbrev );
+
+	// 6. Validate: any remaining '?' means the delta was incomplete (compression bug
+	//    present when the file was stored). Fall back to Civitai rather than return
+	//    a broken workflow.
+	if( _jsdc_has_placeholder( $restored ) ) {
+		return null;
+	}
+
+	return $restored;
 }

@@ -74,15 +74,18 @@ switch( $action ) {
 
     [, $modelEntries] = $cache->loadGenerationMetadataByModel( $modelId );
 
-    // Delete image files for this model from per-image metadata
+    // Delete image files for this model using imageId-based canonical filename
     foreach( $modelEntries as $entry ) {
-      $imageFilename = isset( $entry['imageFilename'] ) ? $entry['imageFilename'] : '';
-      if( $imageFilename !== '' ) {
-        $filepath = $cacheDir . '/' . $imageFilename;
-        if( file_exists( $filepath ) ) {
-          $deletedImageSize += ImageCacheManager::getFileSizeBytes( $filepath );
-          @unlink( $filepath );
-          $deletedImageCount++;
+      $entryImageId = isset( $entry['imageId'] ) ? ( int )$entry['imageId'] : 0;
+      if( $entryImageId > 0 ) {
+        foreach( ['jpg', 'png', 'webp', 'gif'] as $ext ) {
+          $filepath = $cacheDir . '/' . $entryImageId . '.' . $ext;
+          if( file_exists( $filepath ) ) {
+            $deletedImageSize += ImageCacheManager::getFileSizeBytes( $filepath );
+            @unlink( $filepath );
+            $deletedImageCount++;
+            break;
+          }
         }
       }
 

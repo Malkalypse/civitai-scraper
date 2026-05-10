@@ -30,7 +30,6 @@ export const AppState = {
 		copyAllActiveCount:     0           // current count of active "copy all" operations to enforce concurrency limit
 	},
 	ui: {
-		generationPromptsHidden:  localStorage.getItem( 'generationPromptsHidden' ) === 'true', // whether to hide generation prompts
 		hideNonWorkflowImages:    localStorage.getItem( 'hideNonWorkflowImages' ) === 'true',   // whether to hide images without workflow data
 		hideNonFavoriteImages:    localStorage.getItem( 'hideNonFavoriteImages' ) === 'true',   // whether to hide images not marked as favorite
 		thumbnailSize:            localStorage.getItem( 'thumbnailSize' ) || '450'              // size of thumbnails in UI

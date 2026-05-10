@@ -15,7 +15,6 @@ $input                = json_decode( file_get_contents( 'php://input' ), true );
 $imageId              = isset( $input['imageId'] ) ? ( int )$input['imageId'] : 0;
 $inputModelId         = isset( $input['modelId'] ) ? ( string )$input['modelId'] : '';
 $inputModelVersionId  = isset( $input['modelVersionId'] ) ? ( string )$input['modelVersionId'] : '';
-$inputImageFilename   = isset( $input['imageFilename'] ) ? trim( ( string )$input['imageFilename'] ) : '';
 
 if( $imageId <= 0 ) {
 	ApiResponse::sendJson( ['success' => false, 'error' => 'Missing or invalid imageId'] );
@@ -24,7 +23,7 @@ if( $imageId <= 0 ) {
 
 /** Compose generation parts from metadata
  * @param array $meta Metadata array from API response
- * @return array Array with keys 'promptText' and 'copyAllText' containing formatted generation data
+ * @return array Array with key 'copyAllText' containing formatted generation data
  */
 function composeGenerationParts( array $meta ): array {
 	$rawParameters = isset( $meta['parameters'] ) ? trim( ( string )$meta['parameters'] ) : '';
@@ -35,7 +34,6 @@ function composeGenerationParts( array $meta ): array {
 		}
 
 		return [
-			'promptText'  => $prompt,
 			'copyAllText' => $rawParameters
 		];
 	}
@@ -137,17 +135,15 @@ function composeGenerationParts( array $meta ): array {
 	$copyAllText = implode( "\n", $copySegments );
 
 	return [
-		'promptText'  => $prompt,
 		'copyAllText' => $copyAllText
 	];
 }
 
 /** Determine if copyAllText entries in the database should be refreshed
- * @param string $promptText	Prompt text to check for presence
  * @param string $copyAllText	Copy all text to check for likely truncated/legacy format
  * @return bool True if the copyAllText should be refreshed from the source, false to keep existing text
  */
-function shouldRefreshTruncatedCopyAllText( string $promptText, string $copyAllText ): bool {
+function shouldRefreshTruncatedCopyAllText( string $copyAllText ): bool {
 	$trimmedCopy = trim( $copyAllText );
 	if( $trimmedCopy === '' ) {
 		return false;
@@ -160,37 +156,28 @@ function shouldRefreshTruncatedCopyAllText( string $promptText, string $copyAllT
 
 	// Older cached rows were saved as prompt + a few newline-separated fields.
 	// Refresh these rows so the DB stores full generation details.
-	$looksLikeLegacyMinimalFormat = $hasSteps && !$hasNegativePrompt && !$hasCfgScale && !$hasModelHash;
-
-	// If prompt exists but copy text has very little detail, refresh once.
-	$shortCopyForPrompt = trim( $promptText ) !== '' && strlen( $trimmedCopy ) < ( strlen( trim( $promptText ) ) + 120 );
-
-	return $looksLikeLegacyMinimalFormat || $shortCopyForPrompt;
+	return $hasSteps && !$hasNegativePrompt && !$hasCfgScale && !$hasModelHash;
 }
 
 /** Send JSON response with generation data
  * @param mixed $success				Success status of operation
  * @param mixed $imageId        Image ID for data being sent
- * @param mixed $promptText	 		Prompt text to include
  * @param mixed $copyAllText    Copy all text to include
  * @param mixed $favorite				Favorite status to include
  * @param mixed $workflowHash   Workflow hash to include
- * @param mixed $parametersHash Parameters hash to include
  * @param mixed $cached         Cached status to include
  */
-function sendResponse( $success, $imageId, $promptText = '', $copyAllText = '', $favorite = false, $workflowHash = '', $parametersHash = '', $cached = true ) {
-	$workflowState = WorkflowStateManager::describeWorkflowState( $workflowHash, $parametersHash );
+function sendResponse( $success, $imageId, $copyAllText = '', $favorite = false, $workflowHash = '', $cached = true ) {
+	$workflowState = WorkflowStateManager::describeWorkflowState( $workflowHash );
 	
 	ApiResponse::sendJson( [
 		'success'           => $success,
 		'imageId'           => $imageId,
-		'promptText'        => $promptText,
 		'copyAllText'       => $copyAllText,
 		'favorite'          => $favorite,
 		'workflowHash'      => $workflowState['workflowHash'],
 		'workflowPresent'   => $workflowState['workflowHash'] !== '',
 		'workflowNull'      => $workflowState['workflowNull'],
-		'parametersHash'    => $workflowState['parametersHash'],
 		'parametersPresent' => $workflowState['parametersPresent'],
 		'cached'            => $cached
 	] );
@@ -206,16 +193,14 @@ try {
 	$db->set_charset( 'utf8mb4' );
 
 	// Try to read from database first
-	$dbPromptText     = '';
 	$dbCopyAllText    = '';
 	$dbFavorite       = false;
 	$dbWorkflowHash   = '';
-	$dbParametersHash = '';
 	$dbModelVersionId = 0;
 	$dbModelId        = 0;
 	$imageExists      = false;
 
-	$sql = 'SELECT prompt_text, copy_all_text, favorite, workflow_hash, parameters_hash, model_version_id, model_id FROM images WHERE image_id = ? LIMIT 1';
+	$sql = 'SELECT copy_all_text, favorite, workflow_hash, model_version_id, model_id FROM images WHERE image_id = ? LIMIT 1';
 	$stmt = $db->prepare( $sql );
 	if( $stmt ) {
 		$stmt->bind_param( 'i', $imageId );
@@ -223,11 +208,9 @@ try {
 		$result = $stmt->get_result();
 		if( $result && ( $row = $result->fetch_assoc() ) ) {
 			$imageExists      = true;
-			$dbPromptText     = ( string )( $row['prompt_text'] ?? '' );
 			$dbCopyAllText    = ( string )( $row['copy_all_text'] ?? '' );
 			$dbFavorite       = ( bool )( $row['favorite'] ?? false );
 			$dbWorkflowHash   = $row['workflow_hash'] ?? '';
-			$dbParametersHash = $row['parameters_hash'] ?? '';
 			$dbModelVersionId = ( int )( $row['model_version_id'] ?? 0 );
 			$dbModelId        = ( int )( $row['model_id'] ?? 0 );
 		}
@@ -235,11 +218,11 @@ try {
 	}
 
 	// If we have cached generation text in the database, return it immediately
-	$hasGenerationText = (trim( $dbPromptText ) !== '' || trim( $dbCopyAllText ) !== '');
+	$hasGenerationText = trim( $dbCopyAllText ) !== '';
 	
-	if( $imageExists && $hasGenerationText && !shouldRefreshTruncatedCopyAllText( $dbPromptText, $dbCopyAllText ) ) {
+	if( $imageExists && $hasGenerationText && !shouldRefreshTruncatedCopyAllText( $dbCopyAllText ) ) {
 		$db->close();
-		sendResponse( true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, $dbParametersHash, true );
+		sendResponse( true, $imageId, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, true );
 		exit;
 	}
 
@@ -252,7 +235,7 @@ try {
 	if( !$httpResult['ok'] ) {
 		$db->close();
 		if( $imageExists ) {
-			sendResponse( true, $imageId, $dbPromptText, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, $dbParametersHash, true );
+			sendResponse( true, $imageId, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, true );
 		} else {
 			sendResponse( false, $imageId );
 		}
@@ -282,47 +265,42 @@ try {
 		}
 	}
 
-	$promptText   = '';
 	$copyAllText  = '';
 	$favorite     = $dbFavorite;
 
 	if( !is_array( $meta ) ) {
 		$db->close();
-		sendResponse( true, $imageId, '', '', $favorite, $dbWorkflowHash, $dbParametersHash, false );
+		sendResponse( true, $imageId, '', $favorite, $dbWorkflowHash, false );
 		exit;
 	}
 
-	$parts        = composeGenerationParts( $meta );
-	$promptText   = $parts['promptText'];
-	$copyAllText  = $parts['copyAllText'];
+	$parts       = composeGenerationParts( $meta );
+	$copyAllText = $parts['copyAllText'];
 
 	// Update database with fetched generation data
-	$imageFilename = $inputImageFilename !== '' ? $inputImageFilename : '';
 	$updateSql = 'INSERT INTO images ' .
-							 '(image_id, model_id, model_version_id, image_filename, prompt_text, copy_all_text, favorite, workflow_hash, parameters_hash) ' .
-							 'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ' .
-							 'ON DUPLICATE KEY UPDATE ' .
-							 '  model_id = COALESCE(NULLIF(?, 0), model_id), ' .
-							 '  model_version_id = COALESCE(NULLIF(?, 0), model_version_id), ' .
-							 '  image_filename = COALESCE(NULLIF(?, ""), image_filename), ' .
-							 '  prompt_text = ?, ' .
-							 '  copy_all_text = ?, ' .
-							 '  favorite = ?, ' .
-							 '  updated_at = CURRENT_TIMESTAMP';
+						 '(image_id, model_id, model_version_id, copy_all_text, favorite, workflow_hash) ' .
+						 'VALUES (?, ?, ?, ?, ?, ?) ' .
+						 'ON DUPLICATE KEY UPDATE ' .
+						 '  model_id = COALESCE(NULLIF(?, 0), model_id), ' .
+						 '  model_version_id = COALESCE(NULLIF(?, 0), model_version_id), ' .
+						 '  copy_all_text = ?, ' .
+						 '  favorite = ?, ' .
+						 '  updated_at = CURRENT_TIMESTAMP';
 
 	$updateStmt = $db->prepare( $updateSql );
 	if( $updateStmt ) {
-		$updateStmt->bind_param( 'iiisssissiisssi',
-			$imageId, $resolvedModelId, $resolvedModelVersionId, $imageFilename,
-			$promptText, $copyAllText, $favorite, $dbWorkflowHash, $dbParametersHash,
-			$resolvedModelId, $resolvedModelVersionId, $imageFilename,
-			$promptText, $copyAllText, $favorite );
+		$updateStmt->bind_param( 'iiisisiisi',
+			$imageId, $resolvedModelId, $resolvedModelVersionId,
+			$copyAllText, $favorite, $dbWorkflowHash,
+			$resolvedModelId, $resolvedModelVersionId,
+			$copyAllText, $favorite );
 		$updateStmt->execute();
 		$updateStmt->close();
 	}
 
 	$db->close();
-	sendResponse( true, $imageId, $promptText, $copyAllText, $favorite, $dbWorkflowHash, $dbParametersHash, false );
+	sendResponse( true, $imageId, $copyAllText, $favorite, $dbWorkflowHash, false );
 
 } catch( Exception $e ) {
 	ApiResponse::sendJson( [

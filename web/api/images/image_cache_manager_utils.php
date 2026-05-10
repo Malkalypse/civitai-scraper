@@ -41,9 +41,10 @@ class ImageCacheManager {
 		return null;
 	}
 
-	/** Resolve a single cached image from metadata.
+	/** Resolve a single cached image by image ID.
+	 * Checks for <imageId>.jpg on disk directly — no metadata lookup needed.
 	 * @param mixed $imageId Image ID to look up
-	 * @return mixed Associative array with keys 'path', 'filename', 'url' if found, or null if not found or on error
+	 * @return mixed Associative array with keys 'path', 'filename', 'url' if found, or null if not found
 	 */
 	public function resolveCachedImage( $imageId ) {
 		if( !is_numeric( $imageId ) || ( int )$imageId <= 0 ) {
@@ -51,41 +52,21 @@ class ImageCacheManager {
 		}
 
 		$imageId = ( int )$imageId;
-		$metadataPath = $this->generationDir . '/' . $imageId . '.json';
-		if( !is_file( $metadataPath ) ) {
-			return null;
+
+		// Primary: <imageId>.jpg (canonical name after migration)
+		foreach( ['jpg', 'png', 'webp', 'gif'] as $ext ) {
+			$filename = $imageId . '.' . $ext;
+			$candidatePath = $this->cacheDir . '/' . $filename;
+			if( is_file( $candidatePath ) ) {
+				return [
+					'path'			=> $candidatePath,
+					'filename'	=> $filename,
+					'url'				=> 'cache/images/' . $filename
+				];
+			}
 		}
 
-		$raw = @file_get_contents( $metadataPath );
-		if( $raw === false ) {
-			return null;
-		}
-
-		$decoded = json_decode( $raw, true );
-		if( !is_array( $decoded ) ) {
-			return null;
-		}
-
-		$imageFilename = isset( $decoded['imageFilename'] ) ? trim((string)$decoded['imageFilename']) : '';
-		if( $imageFilename === '' ) {
-			return null;
-		}
-
-		$safeFilename = basename( $imageFilename );
-		if( $safeFilename === '' || $safeFilename === '.' || $safeFilename === '..' ) {
-			return null;
-		}
-
-		$candidatePath = $this->cacheDir . '/' . $safeFilename;
-		if( !is_file( $candidatePath ) ) {
-			return null;
-		}
-
-		return [
-			'path'			=> $candidatePath,
-			'filename'	=> $safeFilename,
-			'url'				=> 'cache/images/' . $safeFilename
-		];
+		return null;
 	}
 
 	/** Build cache filenames, paths, and URLs for primary and legacy naming schemes.
@@ -115,19 +96,23 @@ class ImageCacheManager {
 			}
 		}
 
-		$legacyFilename = $baseName;
+		// Canonical filename: <imageId>.jpg — simple, direct, no metadata lookup needed.
+		// Falls back to URL-derived name when no imageId is known.
+		$hasId = $imageId && ( int )$imageId > 0;
+		$canonicalFilename = $hasId ? ( ( int )$imageId . '.jpg' ) : ( $baseName . '.' . $extension );
+
+		// Legacy: old <imageId>-<uuid>-<hash>.<ext> naming kept as fallback for pre-migration files.
+		$legacyFilename = $hasId
+			? ( ( int )$imageId . '-' . $baseName . '.' . $extension )
+			: ( $baseName . '.' . $extension );
 
 		return [
-			'baseName'					=> $baseName,
-			'filename'				=> $filename,
-			'imageFilename'		=> $filename . '.' . $extension,
-			'extension'				=> $extension,
-			'cachedFilePath'	=> $this->cacheDir . '/' . $filename . '.' . $extension,
-			'cachedFileUrl'		=> 'cache/images/' . $filename . '.' . $extension,
-			'legacyFilename'		=> $legacyFilename,
-			'legacyImageFilename' => $legacyFilename . '.' . $extension,
-			'legacyCachedFilePath' => $this->cacheDir . '/' . $legacyFilename . '.' . $extension,
-			'legacyCachedFileUrl' => 'cache/images/' . $legacyFilename . '.' . $extension
+			'imageFilename'				=> $canonicalFilename,
+			'cachedFilePath'			=> $this->cacheDir . '/' . $canonicalFilename,
+			'cachedFileUrl'				=> 'cache/images/' . $canonicalFilename,
+			'legacyImageFilename'	=> $legacyFilename,
+			'legacyCachedFilePath'	=> $this->cacheDir . '/' . $legacyFilename,
+			'legacyCachedFileUrl'	=> 'cache/images/' . $legacyFilename
 		];
 	}
 
@@ -200,20 +185,20 @@ class ImageCacheManager {
 				continue;
 			}
 
-			$filename       = isset( $row['imageFilename'] ) ? trim( ( string )$row['imageFilename'] ) : '';
+			$storedImageId  = isset( $row['imageId'] ) ? ( int )$row['imageId'] : 0;
 			$storedModelId  = isset( $row['modelId'] ) ? ( string )$row['modelId'] : '';
 
-			if( $filename !== '' && $storedModelId !== '' ) {
+			if( $storedModelId !== '' ) {
 				if( !isset( $byModel[$storedModelId] ) ) {
 					$byModel[$storedModelId] = [];
 				}
-				$byModel[$storedModelId][$filename] = true;
+				$byModel[$storedModelId][$storedImageId] = true;
 			}
 
 			if( $targetModelId !== null && $targetModelId !== '' && $storedModelId === ( string )$targetModelId ) {
 				$modelScoped[] = [
-					'path'				=> $file,
-					'imageFilename' => $filename
+					'path'		=> $file,
+					'imageId'	=> $storedImageId
 				];
 			}
 		}

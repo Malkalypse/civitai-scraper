@@ -95,11 +95,6 @@ export async function fetchParametersFallbackFromGenerationData( imageId ) {
 			return copyAllText;
 		}
 
-		const promptText = typeof result.promptText === 'string' ? result.promptText.trim() : '';
-		if( looksLikeA1111ParametersText( promptText ) ) {
-			return promptText;
-		}
-
 		return '';
 	} catch( error ) {
 		console.warn( `Could not resolve parameter fallback for image ${imageId}:`, error );

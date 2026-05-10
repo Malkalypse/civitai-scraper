@@ -26,6 +26,7 @@ require_once __DIR__ . '/../http_utils.php';
 require_once __DIR__ . '/../json_utils.php';
 require_once __DIR__ . '/jpeg_metadata_utils.php';
 require_once __DIR__ . '/png_metadata_utils.php';
+require_once __DIR__ . '/jsdc_utils.php';
 
 header( 'Content-Type: application/json' );
 header( 'X-Content-Type-Options: nosniff' );
@@ -436,6 +437,23 @@ function buildImageUrlCandidates( string $callerUrl, int $imageId ): array {
 
 try {
 	$resolvedImageId	= $imageId > 0 ? $imageId : extractImageIdFromPageUrl( $imagePageUrl );
+
+	// Fast path: restore from local JSDC cache (avoids slow Civitai image download)
+	if( $resolvedImageId > 0 ) {
+		$jsdcCacheDir = __DIR__ . '/../../cache/workflows';
+		$restored = jsdc_restore_workflow( $jsdcCacheDir, $resolvedImageId );
+		if( is_array( $restored ) ) {
+			$restoredText = json_encode( $restored, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+			api_respond_json_and_exit( [
+				'success'			=> true,
+				'imageId'			=> $resolvedImageId,
+				'imageUrl'			=> '',
+				'sourceKeyword'	=> 'jsdc_cache',
+				'workflowText'	=> $restoredText
+			] );
+		}
+	}
+
 	$candidates				= buildImageUrlCandidates( $fullImageUrlInput, $resolvedImageId );
 	
 	if( count( $candidates ) === 0 ) {

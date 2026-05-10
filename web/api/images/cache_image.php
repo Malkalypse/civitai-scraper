@@ -38,11 +38,10 @@ function imageIdFromUrl( $url ) {
  * @param mixed $filename Cached filename
  * @param mixed $imageId Image ID value
  */
-function respondWithCachedImage( $localUrl, $filename, $imageId ) {
+function respondWithCachedImage( $localUrl, $imageId ) {
 	respondJsonAndExit( [
 		'cached'		=> true,
 		'localUrl'	=> $localUrl,
-		'filename'	=> $filename,
 		'imageId'		=> $imageId
 	] );
 }
@@ -82,18 +81,16 @@ function removeOversizedCachedImage( $filePath, $maxSide = 450 ) {
  * @param mixed $imageId				Image ID value
  * @param mixed $modelId				Model ID value
  * @param mixed $modelVersionId	Model version ID value
- * @param mixed $imageFilename	Cached image filename
  * @param ImageCacheManager $cache	Cache manager instance
  */
-function persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $imageFilename, ImageCacheManager $cache ) {
+function persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, ImageCacheManager $cache ) {
 	if( !$imageId ) {
 		return;
 	}
 
 	$cache->upsertImageGenerationMetadata( $imageId, [
 		'modelId'					=> $modelId,
-		'modelVersionId'	=> $modelVersionId,
-		'imageFilename'		=> $imageFilename
+		'modelVersionId'	=> $modelVersionId
 	] );
 }
 
@@ -265,14 +262,12 @@ $generationDir	= __DIR__ . '/../../cache/image_generation';
 $cache					= new ImageCacheManager( $cacheDir, $generationDir );
 $cache->ensureDirectories();
 
-// Fast path: if metadata already knows the cached local filename for this image ID,
-// return it immediately and avoid URL-hash mismatch misses.
+// Fast path: if a canonical <imageId>.jpg exists on disk, return it immediately.
 if( $imageId ) {
 	$metadataCached = $cache->resolveCachedImage( $imageId );
 	if( is_array( $metadataCached ) ) {
 		respondWithCachedImage(
 			$metadataCached['url'],
-			$metadataCached['filename'],
 			$imageId
 		);
 	}
@@ -283,23 +278,27 @@ $cachePaths = $cache->buildCachePathsForImage( $imageUrl, $imageId );
 // Get the download flag
 $download = $input['download'] ?? false;
 
-// Check if already cached (in final location)
+// Check if already cached under the canonical name.
 if( file_exists( $cachePaths['cachedFilePath'] ) ) {
 	removeOversizedCachedImage( $cachePaths['cachedFilePath'], 450 );
 
 	if( file_exists( $cachePaths['cachedFilePath'] ) ) {
-		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['imageFilename'], $cache );
-		respondWithCachedImage( $cachePaths['cachedFileUrl'], $cachePaths['imageFilename'], $imageId );
+		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cache );
+		respondWithCachedImage( $cachePaths['cachedFileUrl'], $imageId );
 	}
 }
 
-// Fallback: accept legacy non-prefixed cached filename to avoid cache misses after naming changes.
+// Fallback: legacy <imageId>-<uuid>-<hash>.<ext> file. Rename it to the canonical name on hit.
 if( !file_exists( $cachePaths['cachedFilePath'] ) && file_exists( $cachePaths['legacyCachedFilePath'] ) ) {
 	removeOversizedCachedImage( $cachePaths['legacyCachedFilePath'], 450 );
 
 	if( file_exists( $cachePaths['legacyCachedFilePath'] ) ) {
-		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['legacyImageFilename'], $cache );
-		respondWithCachedImage( $cachePaths['legacyCachedFileUrl'], $cachePaths['legacyImageFilename'], $imageId );
+		@rename( $cachePaths['legacyCachedFilePath'], $cachePaths['cachedFilePath'] );
+		$servePath = file_exists( $cachePaths['cachedFilePath'] )
+			? $cachePaths['cachedFileUrl']
+			: $cachePaths['legacyCachedFileUrl'];
+		persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cache );
+		respondWithCachedImage( $servePath, $imageId );
 	}
 }
 
@@ -325,13 +324,12 @@ if( $imageResult['ok'] ) {
 	}
 	$finalSize = file_exists( $cachePaths['cachedFilePath'] ) ? filesize( $cachePaths['cachedFilePath'] ) : strlen( $imageData );
 
-	persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cachePaths['imageFilename'], $cache );
+	persistImageMetadataIfAvailable( $imageId, $modelId, $modelVersionId, $cache );
 	
 	respondJsonAndExit( [
 		'cached'				=> false,
 		'downloaded'		=> true,
 		'localUrl'			=> $cachePaths['cachedFileUrl'],
-		'filename'			=> $cachePaths['imageFilename'],
 		'optimizedSize'	=> $finalSize,
 		'sourceUrl'			=> $imageUrl,
 		'imageId'				=> $imageId

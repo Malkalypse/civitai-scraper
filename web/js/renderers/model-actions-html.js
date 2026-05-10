@@ -205,7 +205,6 @@ export function buildImagesSectionHtml() {
 	return `
 		<div class="info">
 			<div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
-				<button type="button" id="generationTogglePromptsBtn" data-toggle-type="prompts" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Prompts</button>
 				<button type="button" id="generationToggleNonWorkflowBtn" data-toggle-type="non-workflow" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Non-Workflow</button>
 				<button type="button" id="generationToggleNonFavoritesBtn" data-toggle-type="non-favorites" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Non-Favorites</button>
 			</div>
@@ -215,6 +214,10 @@ export function buildImagesSectionHtml() {
 					<label for="scanWorkflowsRescan" style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #cfd8dc; cursor: pointer;">
 						<input type="checkbox" id="scanWorkflowsRescan" style="margin: 0;">
 						rescan
+					</label>
+					<label for="scanWorkflowsKeepOriginals" style="display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: #cfd8dc; cursor: pointer;">
+						<input type="checkbox" id="scanWorkflowsKeepOriginals" style="margin: 0;">
+						keep originals
 					</label>
 				</div>
 				<div style="display: flex; align-items: center; gap: 6px; font-size: 11px; color: #cfd8dc;">

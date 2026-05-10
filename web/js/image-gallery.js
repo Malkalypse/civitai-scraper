@@ -1,6 +1,6 @@
 import { AppState, output } from './app-context.js';
-import { waitForWorkflowSectionToBeHidden, applyGenerationPreviewVisibility, applyImageCardFilters } from './filters.js';
-import { checkCached, downloadAndCache, imageIdFromUrl, extractFilenameFromUrl, syncCopyAllPreviewWidth, autosizeCopyAllPreview, queueCopyAllPreviewHydration, toggleImageFavorite } from './image-cache.js';
+import { waitForWorkflowSectionToBeHidden, applyImageCardFilters } from './filters.js';
+import { checkCached, downloadAndCache, imageIdFromUrl, syncCopyAllPreviewWidth, queueCopyAllPreviewHydration, toggleImageFavorite } from './image-cache.js';
 import { copyImageWorkflow, analyzeImageWorkflow, retrySingleImageWorkflowScan } from './workflow.js';
 import { escapeHtml } from './dom-utils.js';
 
@@ -63,17 +63,6 @@ export function updateThumbnailSize( size ) {
 		video.style.maxWidth = size + 'px';
 		video.style.maxHeight = size + 'px';
 	} );
-
-	const allCopyAllTextareas = document.querySelectorAll( '.generation-preview' );
-	allCopyAllTextareas.forEach( textarea => {
-		const card = textarea.closest( '.image-card' );
-		if( card ) {
-			syncCopyAllPreviewWidth( card );
-		}
-		autosizeCopyAllPreview( textarea );
-	} );
-
-	applyGenerationPreviewVisibility();
 }
 
 /** Load images for a specific model and version, updating the gallery and carousel
@@ -260,8 +249,9 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 						if( shouldDelayBeforeRemoteDownload ) {
 							await new Promise( resolve => setTimeout( resolve, 1500 ) );
 						}
-						displayUrl = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
-						shouldDelayBeforeRemoteDownload = true;
+						const { url: cachedUrl, wasDownloaded } = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
+						displayUrl = cachedUrl;
+						shouldDelayBeforeRemoteDownload = wasDownloaded;
 					} else {
 						shouldDelayBeforeRemoteDownload = false;
 					}
@@ -279,7 +269,6 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 							</div>`;
 					} else {
 						const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
-						const imageFilename = extractFilenameFromUrl( displayUrl );
 						imageHtml = `
 							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
 								<a href="${escapeHtml( info.linkUrl || info.originalUrl )}" target="_blank">
@@ -289,7 +278,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 										 loading="lazy">
 								</a>
 								<label style="margin-top: 6px; font-size: 11px; color: #cfd8dc; display: flex; align-items: center; gap: 6px;">
-									<input type="checkbox" class="favorite-checkbox" data-image-id="${imageId || ''}" data-image-filename="${escapeHtml( imageFilename )}">
+									<input type="checkbox" class="favorite-checkbox" data-image-id="${imageId || ''}">
 									Favorite
 								</label>
 								<div class="workflow-actions" style="margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -297,7 +286,6 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 									<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Analyze Workflow</button>
 								</div>
 								<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none; background: transparent; border: none; padding: 0; cursor: pointer; text-decoration: underline;">No Workflow</button>
-								<textarea class="generation-preview generation-prompt-preview" readonly style="margin-top: 6px; width: 100%; min-height: 78px; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; line-height: 1.35; white-space: pre-wrap; resize: none; overflow: hidden; box-sizing: border-box;">Loading prompt...</textarea>
 							</div>`;
 					}
 
@@ -310,15 +298,12 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					renderedCount++;
 					if( !info.isVideo ) {
 						const card = slot.firstElementChild;
-						const promptField = card ? card.querySelector( '.generation-prompt-preview' ) : null;
 						const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 						syncCopyAllPreviewWidth( card );
-						applyGenerationPreviewVisibility();
 						applyImageCardFilters();
-						queueCopyAllPreviewHydration( promptField, favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
+						queueCopyAllPreviewHydration( favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
 							modelId: AppState.model.currentModelId,
-							modelVersionId: AppState.model.currentVersionId,
-							imageFilename: extractFilenameFromUrl( displayUrl )
+							modelVersionId: AppState.model.currentVersionId
 						} );
 					}
 
@@ -366,7 +351,21 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					galleryCountEl.textContent = '0';
 				}
 
-				const cacheChecks = result.galleryImages.map( img => {
+					const cacheChecks = result.galleryImages.map( img => {
+					if( img.missingFromGallery ) {
+						const lookupUrl = img.linkUrl || '';
+						if( !lookupUrl ) {
+							return Promise.resolve( { linkUrl: '', url: null, originalUrl: null, isVideo: false, cached: false, missingFromGallery: true } );
+						}
+						return checkCached( lookupUrl, lookupUrl ).then( check => ( {
+							linkUrl: lookupUrl,
+							url: check.cached ? check.url : null,
+							originalUrl: null,
+							isVideo: false,
+							cached: check.cached,
+							missingFromGallery: !check.cached
+						} ) );
+					}
 					const lookupUrl = img.linkUrl || img.originalUrl || img.url;
 					const isVideo = img.type === 'video' || ( img.url && ( img.url.includes( '.mp4' ) || img.url.includes( '.webm' ) ) );
 					if( isVideo ) {
@@ -413,8 +412,43 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 						if( shouldDelayBeforeRemoteDownload ) {
 							await new Promise( resolve => setTimeout( resolve, 1500 ) );
 						}
-						displayUrl = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
-						shouldDelayBeforeRemoteDownload = true;
+						let wasDownloaded = false;
+						if( info.missingFromGallery ) {
+							const imageId = imageIdFromUrl( info.linkUrl );
+							let fetched = false;
+							try {
+								const abort = new AbortController();
+								const abortTimer = setTimeout( () => abort.abort(), 10000 );
+								let apiResp;
+								try {
+									apiResp = await fetch( `https://civitai.com/api/v1/images?imageId=${imageId}`, { signal: abort.signal } );
+								} finally {
+									clearTimeout( abortTimer );
+								}
+								const apiData = await apiResp.json();
+								const cdnUrl = apiData?.items?.[0]?.url || null;
+								if( cdnUrl ) {
+									info.originalUrl = cdnUrl;
+									const result = await downloadAndCache( cdnUrl, info.linkUrl );
+									displayUrl = result.url;
+									wasDownloaded = result.wasDownloaded;
+									fetched = true;
+								}
+							} catch( e ) {
+								// API unavailable or timed out — image cannot be loaded
+							}
+							if( !fetched ) {
+								const slot = slotElements[info.originalIndex];
+								if( slot ) { slot.remove(); }
+								shouldDelayBeforeRemoteDownload = true;
+								continue;
+							}
+						} else {
+							const result = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
+							displayUrl = result.url;
+							wasDownloaded = result.wasDownloaded;
+						}
+						shouldDelayBeforeRemoteDownload = wasDownloaded;
 					} else {
 						shouldDelayBeforeRemoteDownload = false;
 					}
@@ -432,7 +466,6 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 							</div>`;
 					} else {
 						const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
-						const imageFilename = extractFilenameFromUrl( displayUrl );
 						imageHtml = `
 							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
 								<a href="${escapeHtml( info.linkUrl || info.originalUrl )}" target="_blank">
@@ -442,7 +475,7 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 										 loading="lazy">
 								</a>
 								<label style="margin-top: 6px; font-size: 11px; color: #cfd8dc; display: flex; align-items: center; gap: 6px;">
-									<input type="checkbox" class="favorite-checkbox" data-image-id="${imageId || ''}" data-image-filename="${escapeHtml( imageFilename )}">
+									<input type="checkbox" class="favorite-checkbox" data-image-id="${imageId || ''}">
 									Favorite
 								</label>
 								<div class="workflow-actions" style="margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
@@ -450,7 +483,6 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 									<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Analyze Workflow</button>
 								</div>
 								<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none; background: transparent; border: none; padding: 0; cursor: pointer; text-decoration: underline;">No Workflow</button>
-								<textarea class="generation-preview generation-prompt-preview" readonly style="margin-top: 6px; width: 100%; min-height: 78px; background: #1f1f1f; color: #cfd8dc; border: 1px solid #444; border-radius: 4px; padding: 6px; font-size: 11px; line-height: 1.35; white-space: pre-wrap; resize: none; overflow: hidden; box-sizing: border-box;">Loading prompt...</textarea>
 							</div>`;
 					}
 
@@ -463,15 +495,12 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					renderedCount++;
 					if( !info.isVideo ) {
 						const card = slot.firstElementChild;
-						const promptField = card ? card.querySelector( '.generation-prompt-preview' ) : null;
 						const favoriteCheckbox = card ? card.querySelector( '.favorite-checkbox' ) : null;
 						syncCopyAllPreviewWidth( card );
-						applyGenerationPreviewVisibility();
 						applyImageCardFilters();
-						queueCopyAllPreviewHydration( promptField, favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
+						queueCopyAllPreviewHydration( favoriteCheckbox, info.linkUrl || info.originalUrl, imageLoadToken, {
 							modelId: AppState.model.currentModelId,
-							modelVersionId: AppState.model.currentVersionId,
-							imageFilename: extractFilenameFromUrl( displayUrl )
+							modelVersionId: AppState.model.currentVersionId
 						} );
 					}
 

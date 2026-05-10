@@ -6,7 +6,7 @@ import { AppState, modelInput, output } from './app-context.js';
 import { escapeHtml } from './dom-utils.js';
 import { scanMissingImageWorkflows } from './workflow.js';
 
-import { setupWorkflowAnalysisVisibilityObserver, applyGenerationPreviewVisibility, loadVersionWorkflowFilters, toggleGenerationPreview } from './filters.js';
+import { setupWorkflowAnalysisVisibilityObserver, loadVersionWorkflowFilters, toggleGenerationPreview } from './filters.js';
 import { updateThumbnailSize, loadModelImages } from './image-gallery.js';
 
 import { fetchOriginalFilename, checkModelInDatabase } from './db-sync.js';
@@ -70,7 +70,9 @@ function initializeModelActionsHandlers() {
 			if( scanWorkflowsBtn && output.contains( scanWorkflowsBtn ) ) {
 				const rescanCheckbox = document.getElementById( 'scanWorkflowsRescan' );
 				const rescanAll = rescanCheckbox ? rescanCheckbox.checked === true : false;
-				scanMissingImageWorkflows( scanWorkflowsBtn, { rescanAll } );
+				const keepOriginalsCheckbox = document.getElementById( 'scanWorkflowsKeepOriginals' );
+				const keepOriginals = keepOriginalsCheckbox ? keepOriginalsCheckbox.checked === true : false;
+				scanMissingImageWorkflows( scanWorkflowsBtn, { rescanAll, keepOriginals } );
 				return;
 			}
 
@@ -421,7 +423,6 @@ async function resolveDisplayData( selectedVersion ) {
  */
 function initializeModelView( selectedVersion ) {
 	setupWorkflowAnalysisVisibilityObserver();
-	applyGenerationPreviewVisibility();
 	loadVersionWorkflowFilters( selectedVersion?.id || AppState.model.currentVersionId );
 
 	const thumbnailSizeSelect = document.getElementById( 'thumbnailSize' );
