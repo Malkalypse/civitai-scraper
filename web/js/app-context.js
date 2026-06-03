@@ -17,10 +17,12 @@ export const AppState = {
 		currentOriginalFilename:  null,   // original filename as stored in database
 		currentModelExistsInDb:   false,  // whether currently selected model/version exists in database
 		currentModelId:           null,   // model ID of currently selected model
+		currentModelType:         null,   // type of currently selected model (e.g. 'Checkpoint', 'LORA')
 		currentModelJsonData:     null    // full JSON data of currently selected model
 	},
 	filters: {
-		activeTags:               new Set()	// currently active tags for sidebar filtering
+		activeTags:      new Set(),     // active model tags for sidebar filtering
+		activeUserTags:  new Set()      // active user tags for sidebar filtering
 	},
 	runtime: {
 		currentImageLoadToken:  0,          // token to track latest image load operation for cancellation purposes
@@ -30,15 +32,19 @@ export const AppState = {
 		copyAllActiveCount:     0           // current count of active "copy all" operations to enforce concurrency limit
 	},
 	ui: {
-		hideNonWorkflowImages:    localStorage.getItem( 'hideNonWorkflowImages' ) === 'true',   // whether to hide images without workflow data
-		hideNonFavoriteImages:    localStorage.getItem( 'hideNonFavoriteImages' ) === 'true',   // whether to hide images not marked as favorite
+		workflowTypeFilter: {
+			showWorkflow:   localStorage.getItem( 'showWorkflow' )   !== 'false',  // show green-bordered ComfyUI workflow images
+			showParameters: localStorage.getItem( 'showParameters' ) !== 'false',  // show teal-bordered Auto1111 parameters images
+			showNoData:     localStorage.getItem( 'showNoData' )     !== 'false',  // show red-bordered images with no generation data
+		},
+		favoriteFilter:           localStorage.getItem( 'favoriteFilter' ) || 'normal',           // 'normal' | 'favorites' | 'show-hidden'
 		thumbnailSize:            localStorage.getItem( 'thumbnailSize' ) || '450'              // size of thumbnails in UI
 	},
 	workflow: {
 		workflowFilterOptions:          [],     // available workflow filter options based on cached workflow hashes for the active version
 		activeWorkflowFilterKey:        'all',  // currently active workflow filter key (workflow hash or 'all' for no filter)
-		workflowLinksHidden:            false,  // whether to hide workflow links in UI when a workflow filter is active
-		workflowTextHidden:             false,  // whether to hide workflow text in UI when a workflow filter is active
+		workflowLinksHidden:            localStorage.getItem( 'workflowLinksHidden' ) === 'true',  // whether to hide workflow links in UI when a workflow filter is active
+		workflowTextHidden:             localStorage.getItem( 'workflowTextHidden' ) === 'true',  // whether to hide workflow text in UI when a workflow filter is active
 		workflowAnalysisSectionVisible: false,  // whether the workflow analysis section is visible in UI
 		workflowVisibilityObserver:     null,   // MutationObserver instance for observing changes to workflow-related elements for dynamic filtering
 		workflowVisibilityWaiters:      []      // Array of functions waiting for the workflowVisibilityObserver to be initialized before they can add elements to observe

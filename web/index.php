@@ -5,6 +5,7 @@
 <head>
 	<meta charset="UTF-8">
 	<title>Civitai Data Viewer</title>
+	<link rel="stylesheet" href="packages/melodeon/melodeon.css">
 	<link rel="stylesheet" href="css/style.css">
 	<script>
 	window.SiteConfig = <?php echo json_encode( [
@@ -19,10 +20,7 @@
 
 	<!-- Sidebar -->
 	<div class="sidebar">
-		<h2>Checkpoints Library</h2>
 		<div id="checkpointsList">Loading...</div>
-
-		<h2>Loras Library</h2>
 		<div id="lorasList">Loading...</div>
 	</div>
 
@@ -43,6 +41,11 @@
 					Add to Database
 				</button>
 				<span id="addToDbStatus" style="margin-left: 10px; font-size: 13px;"></span>
+			</div>
+
+			<div id="userTags" class="version-links visible">
+				<div class="title">User Tags:</div>
+				<div id="userTagsContainer" class="version-links-container"></div>
 			</div>
 
 			<div id="modelTags" class="version-links">

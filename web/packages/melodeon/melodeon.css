@@ -1,0 +1,119 @@
+/**
+ * Sidebar package — default styles.
+ *
+ * Uses CSS custom properties so any host page can theme without overriding selectors.
+ * Set these variables on :root or a parent element to customize appearance:
+ *
+ *   --sidebar-bg
+ *   --sidebar-border-color
+ *   --sidebar-padding
+ *   --sidebar-heading-color
+ *   --sidebar-hover-bg
+ *   --sidebar-item-color
+ *   --sidebar-item-hover-color
+ *   --sidebar-item-missing-color
+ *   --sidebar-item-missing-hover-color
+ *   --sidebar-subcat-color
+ */
+
+.sidebar {
+	background-color:	var(--sidebar-bg, #25262b);
+	border-right:			1px solid var(--sidebar-border-color, #444);
+	overflow-y:				auto;
+	padding:					var(--sidebar-padding, 20px);
+}
+
+/* ── Category blocks ──────────────────────────────────────────────── */
+
+.sidebar-cat--level-1 {
+	margin-bottom: 15px;
+}
+
+.sidebar-cat--level-2 {
+	margin-bottom: 5px;
+}
+
+/* ── Category headers ─────────────────────────────────────────────── */
+
+.sidebar-cat-header {
+	cursor:					pointer;
+	user-select:		none;
+	border-radius:	3px;
+}
+
+/* Level 1: */
+.sidebar-cat-header--level-1 {
+	color:						var(--sidebar-heading-color, #4CAF50);
+	font-size:				18px;
+	font-weight:			bold;
+	padding:					10px 0;
+	position:					sticky;
+	top:							0;
+	z-index:					1;
+	background-color:	var(--sidebar-bg, #25262b);
+}
+
+.sidebar-cat-header--level-1:hover {
+	background-color: var(--sidebar-hover-bg, #3a3a3a);
+}
+
+/* Level 2+: applied to all headers except level 1; override for specific levels as needed */
+.sidebar-cat-header:not(.sidebar-cat-header--level-1) {
+	font-weight:	bold;
+	padding:			5px;
+}
+
+.sidebar-cat-header:not(.sidebar-cat-header--level-1):hover {
+	background-color: var(--sidebar-hover-bg, #3a3a3a);
+}
+
+/* ── Triangle icon ────────────────────────────────────────────────── */
+
+.sidebar-cat-triangle {
+	display:			inline-block;
+	transition:		transform 0.2s ease;
+	font-size:		10px;
+	margin-right:	5px;
+}
+
+/* ── Item list ────────────────────────────────────────────────────── */
+
+.sidebar-item-list {
+	list-style:		none;
+	padding-left:	15px;
+	margin-top:		5px;
+}
+
+/* ── Items ────────────────────────────────────────────────────────── */
+
+.sidebar-item {
+	color:					var(--sidebar-item-color, rgb(77, 171, 247));
+	padding:				3px 5px;
+	margin:					2px 0;
+	cursor:					pointer;
+	border-radius:	3px;
+	font-size:			14px;
+}
+
+.sidebar-item:hover {
+	color: var(--sidebar-item-hover-color, #fff);
+}
+
+.sidebar-item--missing {
+	color: var(--sidebar-item-missing-color, #868e96);
+}
+
+.sidebar-item--missing:hover {
+	color: var(--sidebar-item-missing-hover-color, #adb5bd);
+}
+
+.sidebar-item--hidden {
+	display: none;
+}
+
+/* ── Error message ────────────────────────────────────────────────── */
+
+.sidebar-error {
+	font-size:	12px;
+	color:			var(--sidebar-error-color, #fa5252);
+}

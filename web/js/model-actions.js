@@ -1,4 +1,4 @@
-import { toggleTag } from './sidebar.js';
+import { toggleTag, toggleUserTag } from './sidebar.js';
 import { loadModelVersion } from './model-loading.js';
 import { resetFilename, handleFilenameKeydown, handleOriginalFilenameKeydown } from './file-editing.js';
 
@@ -6,11 +6,11 @@ import { AppState, modelInput, output } from './app-context.js';
 import { escapeHtml } from './dom-utils.js';
 import { scanMissingImageWorkflows } from './workflow.js';
 
-import { setupWorkflowAnalysisVisibilityObserver, loadVersionWorkflowFilters, toggleGenerationPreview } from './filters.js';
+import { setupWorkflowAnalysisVisibilityObserver, loadVersionWorkflowFilters, setWorkflowTypeFilter, setFavoriteFilter } from './filters.js';
 import { updateThumbnailSize, loadModelImages } from './image-gallery.js';
 
 import { fetchOriginalFilename, checkModelInDatabase } from './db-sync.js';
-import { buildModelTagsHtml, buildVersionLinksHtml, buildFetchDataHtml } from './renderers/model-actions-html.js';
+import { buildModelTagsHtml, buildUserTagsHtml, buildVersionLinksHtml, buildFetchDataHtml } from './renderers/model-actions-html.js';
 
 
 /** Initialize event handlers for model actions */
@@ -30,6 +30,59 @@ function initializeModelActionsHandlers() {
 				toggleTag( tagElement ); // sidebar.js
 			}
 		} );
+	}
+
+	// User tags: remove / add interactions
+	const userTagsContainer = document.getElementById( 'userTagsContainer' );
+	if( userTagsContainer ) {
+		userTagsContainer.addEventListener( 'click', ( event ) => {
+			const removeBtn = event.target.closest( '.user-tag-remove' );
+			if( removeBtn ) {
+				const tagDiv = removeBtn.closest( '.user-tag' );
+				const tagId  = tagDiv ? Number( tagDiv.dataset.tagId ) : 0;
+				if( tagId > 0 ) {
+					removeUserTag( AppState.model.currentModelId, tagId );
+				}
+				return;
+			}
+
+			const userTagEl = event.target.closest( '.user-tag' );
+			if( userTagEl ) {
+				toggleUserTag( userTagEl ); // sidebar.js
+				return;
+			}
+
+			const addBtn = event.target.closest( '.user-tag-add' );
+			if( addBtn && addBtn.contentEditable !== 'true' ) {
+				addBtn.textContent   = '';
+				addBtn.contentEditable = 'true';
+				addBtn.focus();
+			}
+		} );
+
+		userTagsContainer.addEventListener( 'keydown', ( event ) => {
+			const addBtn = event.target.closest( '.user-tag-add[contenteditable="true"]' );
+			if( !addBtn ) return;
+
+			if( event.key === 'Enter' ) {
+				event.preventDefault();
+				const text = addBtn.textContent.trim();
+				if( text === '' ) {
+					restoreAddButton( addBtn );
+				} else {
+					addUserTag( AppState.model.currentModelId, text );
+				}
+			} else if( event.key === 'Escape' ) {
+				restoreAddButton( addBtn );
+			}
+		} );
+
+		userTagsContainer.addEventListener( 'blur', ( event ) => {
+			const addBtn = event.target.closest( '.user-tag-add[contenteditable="true"]' );
+			if( addBtn ) {
+				restoreAddButton( addBtn );
+			}
+		}, true );
 	}
 
 	// Set up click handler for model version links
@@ -62,7 +115,7 @@ function initializeModelActionsHandlers() {
 			const clearCacheBtn = event.target.closest( '[data-action="clear-cache"]' );
 			if( clearCacheBtn && output.contains( clearCacheBtn ) ) {
 				const modelId = clearCacheBtn.dataset.modelId || null;
-				clearCache( modelId );
+				clearCache( modelId, AppState.model.currentVersionId );
 				return;
 			}
 
@@ -76,11 +129,7 @@ function initializeModelActionsHandlers() {
 				return;
 			}
 
-			// [Show/Hide Prompts|Non-Workflow|Non-Favorites] buttons
-			const togglePreviewBtn = event.target.closest( '[data-toggle-type]' );
-			if( togglePreviewBtn && output.contains( togglePreviewBtn ) ) {
-				toggleGenerationPreview( togglePreviewBtn.dataset.toggleType ); // filters.js
-			}
+
 		} );
 
 		// Set up change handler for thumbnail size select
@@ -88,6 +137,16 @@ function initializeModelActionsHandlers() {
 			const thumbnailSizeSelect = event.target.closest( '#thumbnailSize' );
 			if( thumbnailSizeSelect && output.contains( thumbnailSizeSelect ) ) {
 				updateThumbnailSize( thumbnailSizeSelect.value ); // image-gallery.js
+			}
+
+			const favoriteFilterSelect = event.target.closest( '#generationFavoriteFilter' );
+			if( favoriteFilterSelect && output.contains( favoriteFilterSelect ) ) {
+				setFavoriteFilter( favoriteFilterSelect.value );
+			}
+
+			const typeFilterCheckbox = event.target.closest( '[data-filter-type]' );
+			if( typeFilterCheckbox && output.contains( typeFilterCheckbox ) ) {
+				setWorkflowTypeFilter( typeFilterCheckbox.dataset.filterType, typeFilterCheckbox.checked );
 			}
 		} );
 
@@ -115,7 +174,7 @@ function initializeModelActionsHandlers() {
 /** Clear cache for specific model or all models
  * @param {*} modelId model ID to clear cache for (null to clear entire cache)
  */
-export async function clearCache( modelId = null ) {
+export async function clearCache( modelId = null, versionId = null ) {
 	const action			= modelId ? 'clearModel' : 'clearAll';
 	const confirmMsg	= modelId ? 'Clear cache for this model?' : 'Clear entire image cache?';
 
@@ -125,7 +184,7 @@ export async function clearCache( modelId = null ) {
 		const response = await fetch( 'api/images/cache_manager.php', {
 			method:		'POST',
 			headers:	{ 'Content-Type': 'application/json' },
-			body:			JSON.stringify( { action: action, modelId: modelId } )
+			body:			JSON.stringify( { action, modelId, versionId } )
 		} );
 		const result = await response.json();
 
@@ -134,11 +193,13 @@ export async function clearCache( modelId = null ) {
 			const deletedMetadataCount	= Number( result.deletedMetadataCount || 0 );
 			const deletedImageSizeMB		= Number( result.deletedImageSizeMB || 0 );
 			const deletedMetadataSizeMB	= Number( result.deletedMetadataSizeMB || 0 );
+			const deletedDbRows					= Number( result.deletedDbRows || 0 );
 
 			alert(
 				`Cleared ${result.deletedCount} files (${result.deletedSizeMB} MB)\n` +
 				`Images: ${deletedImageCount} (${deletedImageSizeMB} MB)\n` +
-				`Generation JSON: ${deletedMetadataCount} (${deletedMetadataSizeMB} MB)`
+				`Generation JSON: ${deletedMetadataCount} (${deletedMetadataSizeMB} MB)\n` +
+				( deletedDbRows > 0 ? `DB image rows deleted: ${deletedDbRows}` : '' )
 			);
 			
 			fetchData();
@@ -184,9 +245,11 @@ export async function fetchData( options = {} ) {
 
 			// Render model tags based on fetched result
 			renderTags( result );
+			renderUserTags( result.modelId, result.userTags || [] );
 
 			// Render version links based on extracted model versions and selected version
 			const { modelVersions, modelType, trpcDescription } = modelContext( result );
+			AppState.model.currentModelType = modelType ?? null;
 			renderVersionLinks( modelVersions, selectedVersion );
 
 			// Resolve additional display data for selected version
@@ -247,6 +310,7 @@ function prepareFetchDataRequest( options = {} ) {
 	document.getElementById( 'modelTags' ).classList.remove( 'visible' );
 	document.getElementById( 'versionLinks' ).classList.remove( 'visible' );
 	document.getElementById( 'addToDbSection' ).style.display = 'none';
+	document.getElementById( 'userTagsContainer' ).innerHTML = '';
 
 	// Hide the carousel container if it exists
 	const existingCarousel = document.getElementById( 'carouselContainer' );
@@ -330,9 +394,12 @@ async function applyResult( result, modelInput, selectedVersion ) {
  * @returns An object containing modelVersions, modelType, and trpcDescription
  */
 function modelContext( result ) {
-	const modelVersions		= result.data?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.modelVersions;
-	const modelType				= result.data?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.type;
-	const trpcQueries			= result.data?.props?.pageProps?.trpcState?.json?.queries;
+	const trpcQueries	= result.data?.props?.pageProps?.trpcState?.json?.queries;
+	const modelQuery	= Array.isArray( trpcQueries )
+		? trpcQueries.find( q => Array.isArray( q?.queryKey?.[0] ) && q.queryKey[0][0] === 'model' )
+		: null;
+	const modelVersions		= modelQuery?.state?.data?.modelVersions;
+	const modelType				= modelQuery?.state?.data?.type;
 	const trpcDescription	= Array.isArray( trpcQueries )
 		? ( trpcQueries.find( query => typeof query?.state?.data?.description === 'string' )?.state?.data?.description || '' )
 		: '';
@@ -357,6 +424,68 @@ function renderTags( result ) {
 		modelTagsContainer.innerHTML	= buildModelTagsHtml( result.modelTags );
 		document.getElementById( 'modelTags' ).classList.add( 'visible' );
 	}
+}
+
+function renderUserTags( modelId, userTags ) {
+	const container = document.getElementById( 'userTagsContainer' );
+	container.innerHTML = buildUserTagsHtml( userTags, modelId );
+}
+
+async function addUserTag( modelId, tag ) {
+	try {
+		const response = await fetch( 'api/tags/user_tags.php', {
+			method:  'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body:    JSON.stringify( { action: 'add', modelId: Number( modelId ), tag } )
+		} );
+		const result = await response.json();
+		if( result.success ) {
+			await refreshUserTags( modelId );
+		} else {
+			console.error( 'Failed to add user tag:', result.error );
+		}
+	} catch( error ) {
+		console.error( 'addUserTag error:', error );
+	}
+}
+
+async function removeUserTag( modelId, tagId ) {
+	try {
+		const response = await fetch( 'api/tags/user_tags.php', {
+			method:  'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body:    JSON.stringify( { action: 'remove', modelId: Number( modelId ), tagId } )
+		} );
+		const result = await response.json();
+		if( result.success ) {
+			await refreshUserTags( modelId );
+		} else {
+			console.error( 'Failed to remove user tag:', result.error );
+		}
+	} catch( error ) {
+		console.error( 'removeUserTag error:', error );
+	}
+}
+
+async function refreshUserTags( modelId ) {
+	try {
+		const response = await fetch( 'api/tags/user_tags.php', {
+			method:  'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body:    JSON.stringify( { action: 'get', modelId: Number( modelId ) } )
+		} );
+		const result = await response.json();
+		if( result.success ) {
+			renderUserTags( modelId, result.tags || [] );
+		}
+	} catch( error ) {
+		console.error( 'refreshUserTags error:', error );
+	}
+}
+
+function restoreAddButton( addBtn ) {
+	addBtn.contentEditable = 'false';
+	addBtn.textContent     = '+';
 }
 
 /** Render version links section

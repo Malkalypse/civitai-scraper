@@ -704,6 +704,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 	if( linksToggleBtn ) {
 		linksToggleBtn.onclick = () => {
 			AppState.workflow.workflowLinksHidden = !AppState.workflow.workflowLinksHidden;
+			localStorage.setItem( 'workflowLinksHidden', AppState.workflow.workflowLinksHidden );
 			applyLinksVisibility();
 		};
 	}
@@ -712,6 +713,7 @@ export function renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitio
 	if( textToggleBtn ) {
 		textToggleBtn.onclick = () => {
 			AppState.workflow.workflowTextHidden = !AppState.workflow.workflowTextHidden;
+			localStorage.setItem( 'workflowTextHidden', AppState.workflow.workflowTextHidden );
 			applyTextVisibility();
 		};
 	}

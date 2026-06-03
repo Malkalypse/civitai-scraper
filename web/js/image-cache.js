@@ -1,56 +1,33 @@
 import { AppState, COPY_ALL_MAX_CONCURRENCY } from './app-context.js';
 import { applyWorkflowIdentityToCard, applyImageCardFilters } from './filters.js';
 import { imageIdFromUrl, extractFilenameFromUrl } from './url-utils.js';
+import { ImageCache } from '../packages/image-cache/ImageCache.js';
 
-export { imageIdFromUrl, extractFilenameFromUrl } from './url-utils.js';
+export { imageIdFromUrl, extractFilenameFromUrl, toCivitaiOriginalUrl } from './url-utils.js';
+
+const _cache = new ImageCache( {
+	getContext: () => ( {
+		modelId:   AppState.model.currentModelId,
+		versionId: AppState.model.currentVersionId
+	} )
+} );
 
 /** Check if an image URL is already cached locally, returning the local URL if so
  * @param {string} remoteUrl URL of the image to check in cache
  * @param {string|null} cacheLookupUrl optional URL to use for cache lookup instead of remoteUrl
  * @returns {Promise<{url: string, cached: boolean}>} Object containing the URL to use (local if cached, original if not) and whether it was cached
  */
-export async function checkCached( remoteUrl, cacheLookupUrl = null ) {
-	try {
-		const response = await fetch( 'api/images/cache_image.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( { imageUrl: remoteUrl, lookupUrl: cacheLookupUrl || remoteUrl, download: false, modelId: AppState.model.currentModelId, versionId: AppState.model.currentVersionId } )
-		} );
-		const result = await response.json();
-
-		if( result.cached && result.localUrl ) {
-			return { url: result.localUrl, cached: true };
-		}
-		return { url: remoteUrl, cached: false };
-	} catch( error ) {
-		console.error( 'Cache check failed:', error );
-		return { url: remoteUrl, cached: false };
-	}
+export function checkCached( remoteUrl, cacheLookupUrl = null ) {
+	return _cache.checkCached( remoteUrl, cacheLookupUrl );
 }
-
 
 /** Download an image from a remote URL and cache it locally, returning the local URL if successful
  * @param {string} remoteUrl URL of the image to download and cache
  * @param {string|null} cacheLookupUrl optional URL to use for cache lookup instead of remoteUrl
- * @returns {Promise<string>} Local URL of the cached image if successful, otherwise the original remote URL
+ * @returns {Promise<{url: string, wasDownloaded: boolean, failed: boolean}>}
  */
-export async function downloadAndCache( remoteUrl, cacheLookupUrl = null ) {
-	try {
-		const response = await fetch( 'api/images/cache_image.php', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify( { imageUrl: remoteUrl, lookupUrl: cacheLookupUrl || remoteUrl, download: true, modelId: AppState.model.currentModelId, versionId: AppState.model.currentVersionId } )
-		} );
-		const result = await response.json();
-
-		if( result.localUrl ) {
-			return { url: result.localUrl, wasDownloaded: result.downloaded === true };
-		}
-		return { url: remoteUrl, wasDownloaded: false };
-	} catch( error ) {
-		console.error( 'Download failed:', error );
-		return { url: remoteUrl, wasDownloaded: false };
-	}
+export function downloadAndCache( remoteUrl, cacheLookupUrl = null ) {
+	return _cache.downloadAndCache( remoteUrl, cacheLookupUrl );
 }
 
 
@@ -63,7 +40,6 @@ export function syncCopyAllPreviewWidth( card ) {
 	}
 
 	const workflowActions = card.querySelector( '.workflow-actions' );
-	const copyBtn = card.querySelector( '.workflow-copy-btn' );
 	const analyzeBtn = card.querySelector( '.workflow-analyze-btn' );
 	const image = card.querySelector( 'img' );
 
@@ -71,9 +47,14 @@ export function syncCopyAllPreviewWidth( card ) {
 		return;
 	}
 
+	const favoriteRow = card.querySelector( '.favorite-row' );
+
 	const applyWidth = () => {
 		const renderedWidth = image.clientWidth;
 		if( renderedWidth > 0 ) {
+			if( favoriteRow ) {
+				favoriteRow.style.width = renderedWidth + 'px';
+			}
 			if( workflowActions ) {
 				const stackedButtons = String( AppState.ui.thumbnailSize ) === '150';
 				workflowActions.style.width = renderedWidth + 'px';
@@ -81,10 +62,6 @@ export function syncCopyAllPreviewWidth( card ) {
 				workflowActions.style.justifyContent = stackedButtons ? 'flex-start' : 'space-between';
 				workflowActions.style.flexDirection = stackedButtons ? 'column' : 'row';
 				workflowActions.style.alignItems = stackedButtons ? 'stretch' : 'center';
-
-				if( copyBtn ) {
-					copyBtn.style.width = stackedButtons ? '100%' : '';
-				}
 
 				if( analyzeBtn ) {
 					analyzeBtn.style.width = stackedButtons ? '100%' : '';
@@ -145,13 +122,21 @@ export function processCopyAllPreviewQueue() {
 				// while the HTTP response for this hydration job was in-flight or queued.
 				const fresh = AppState.runtime.copyAllTextCache.get( job.imageId ) || payload;
 
-				const favorite = fresh?.favorite === true;
+				const dismissed = fresh?.dismissed === true;
+				const favorite = !dismissed && fresh?.favorite === true;
 				const workflowPresent = fresh?.workflowPresent === true;
 				const workflowNull = fresh?.workflowNull === true;
 				const workflowHash = typeof fresh?.workflowHash === 'string' ? fresh.workflowHash : '';
 				const parametersPresent = fresh?.parametersPresent === true;
 
 			if( job.favoriteCheckbox ) {
+				const card = job.favoriteCheckbox.closest( '.image-card' );
+
+				if( dismissed && card ) {
+					card.dataset.dismissed = '1';
+					applyImageCardFilters();
+				}
+
 				job.favoriteCheckbox.checked = favorite;
 				job.favoriteCheckbox.dataset.workflowPresent = workflowPresent ? '1' : '0';
 				job.favoriteCheckbox.dataset.workflowNull = workflowNull ? '1' : '0';
@@ -159,7 +144,6 @@ export function processCopyAllPreviewQueue() {
 
 				// Only update the card's workflow hash if the incoming value is non-empty,
 				// or the card has not been loaded by a concurrent scan (workflowLoaded = 0).
-				const card = job.favoriteCheckbox.closest( '.image-card' );
 				const cardWorkflowLoaded = card ? card.dataset.workflowLoaded === '1' : false;
 				if( workflowHash !== '' || !cardWorkflowLoaded ) {
 					applyWorkflowIdentityToCard( job.favoriteCheckbox, workflowHash );
@@ -225,7 +209,8 @@ export async function fetchCopyAllTextForImageId( imageId, options = {} ) {
 
 			const fetchedPayload = {
 				copyAllText: typeof result.copyAllText === 'string' ? result.copyAllText : '',
-				favorite: result.favorite === true,
+				dismissed: result.display === -1,
+				favorite: result.display === 1 || result.display === true,
 				workflowPresent: result.workflowPresent === true,
 				workflowNull: result.workflowNull === true,
 				workflowHash: typeof result.workflowHash === 'string' ? result.workflowHash : '',
@@ -274,7 +259,7 @@ export async function toggleImageFavorite( checkbox ) {
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify( {
 				imageId,
-				favorite,
+				display: favorite,
 				modelId: AppState.model.currentModelId,
 				modelVersionId: AppState.model.currentVersionId
 			} )
@@ -289,17 +274,67 @@ export async function toggleImageFavorite( checkbox ) {
 			const cached = AppState.runtime.copyAllTextCache.get( imageId ) || {};
 			AppState.runtime.copyAllTextCache.set( imageId, {
 				...cached,
-				favorite: result.favorite === true
+				favorite: result.display === true
 			} );
 		}
 
-		updateImageCardState( checkbox, { favoriteLoaded: true, favorite: result.favorite === true } );
-		setFavoriteImageBorder( checkbox, result.favorite === true );
+		updateImageCardState( checkbox, { favoriteLoaded: true, favorite: result.display === 1 || result.display === true } );
+		setFavoriteImageBorder( checkbox, result.display === 1 || result.display === true );
 	} catch( error ) {
 		console.warn( `Could not update favorite state for image ${imageId}:`, error );
 		checkbox.checked = previous;
 		updateImageCardState( checkbox, { favoriteLoaded: true, favorite: previous } );
 		setFavoriteImageBorder( checkbox, previous );
+	}
+}
+
+
+/** Dismiss an image by setting its display value to -1, hiding it permanently regardless of filter state
+ * @param {HTMLButtonElement} button the dismiss button element, which should have a data-image-id attribute
+ */
+export async function dismissImage( button ) {
+	if( !button ) {
+		return;
+	}
+
+	const imageId = Number( button.dataset.imageId || 0 );
+	if( !Number.isInteger( imageId ) || imageId <= 0 ) {
+		return;
+	}
+
+	const card = button.closest( '.image-card' );
+	if( card ) {
+		card.dataset.dismissed = '1';
+		applyImageCardFilters();
+	}
+
+	try {
+		const response = await fetch( 'api/images/update_image_favorite.php', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify( {
+				imageId,
+				display: -1,
+				modelId: AppState.model.currentModelId,
+				modelVersionId: AppState.model.currentVersionId
+			} )
+		} );
+
+		const result = await response.json();
+		if( !response.ok || !result.success ) {
+			throw new Error( result.error || `HTTP ${response.status}` );
+		}
+
+		if( AppState.runtime.copyAllTextCache.has( imageId ) ) {
+			const cached = AppState.runtime.copyAllTextCache.get( imageId ) || {};
+			AppState.runtime.copyAllTextCache.set( imageId, { ...cached, dismissed: true, favorite: false } );
+		}
+	} catch( error ) {
+		console.warn( `Could not dismiss image ${imageId}:`, error );
+		if( card ) {
+			card.dataset.dismissed = '0';
+			applyImageCardFilters();
+		}
 	}
 }
 
@@ -416,21 +451,18 @@ export function updateWorkflowActionsVisibility( referenceElement ) {
 		return;
 	}
 
-	const workflowLoaded = card.dataset.workflowLoaded === '1';
-	const workflowNull = card.dataset.workflowNull === '1';
-	const parametersPresent = card.dataset.parametersPresent === '1';
-	const showNoWorkflow = workflowLoaded && workflowNull && !parametersPresent;
-
-	const copyBtn = card.querySelector( '.workflow-copy-btn' );
-	if( copyBtn ) {
-		copyBtn.textContent = parametersPresent ? 'Copy Parameters' : 'Copy Workflow';
-	}
+	const workflowLoaded		= card.dataset.workflowLoaded === '1';
+	const workflowNull			= card.dataset.workflowNull === '1';
+	const parametersPresent	= card.dataset.parametersPresent === '1';
+	const showNoWorkflow		= workflowLoaded && workflowNull && !parametersPresent;
 
 	const analyzeBtn = card.querySelector( '.workflow-analyze-btn' );
 	if( analyzeBtn ) {
-		analyzeBtn.textContent = parametersPresent ? 'Analyze Parameters' : 'Analyze Workflow';
+		analyzeBtn.textContent = parametersPresent
+			? 'Show Parameters'
+			: 'Show Workflow';
 	}
 
-	actions.style.display = showNoWorkflow ? 'none' : 'flex';
-	noWorkflowLabel.style.display = showNoWorkflow ? '' : 'none';
+	actions.style.display					= showNoWorkflow ? 'none' : '';
+	noWorkflowLabel.style.display	= showNoWorkflow ? 'block' : 'none';
 }

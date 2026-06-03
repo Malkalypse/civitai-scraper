@@ -32,13 +32,13 @@ header( 'Content-Type: application/json' );
 header( 'X-Content-Type-Options: nosniff' );
 
 /** Emit a JSON response and terminate execution.
- * @param mixed $payload Response payload
- * @param int $statusCode HTTP status code
- * @param int $jsonFlags Optional json_encode flags
+ * @param mixed	$payload Response payload
+ * @param int		$statusCode HTTP status code
+ * @param int		$jsonFlags Optional json_encode flags
  */
 function api_respond_json_and_exit( $payload, $statusCode = 200, $jsonFlags = 0 ) {
-	http_response_code( (int)$statusCode );
-	echo json_encode( $payload, (int)$jsonFlags );
+	http_response_code( ( int )$statusCode );
+	echo json_encode( $payload, ( int )$jsonFlags );
 	exit;
 }
 
@@ -72,12 +72,14 @@ function extractImageIdFromPageUrl( string $url ): int {
  * @return string Resolved image URL (or empty string if not found)
  */
 function resolveImageUrlFromCivitaiById( int $imageId ): string {
+
+	// If no image ID provided, return empty string
 	if( $imageId <= 0 ) {
 		return '';
 	}
 
-	$apiUrl = SITE_URL_API_REST . '/images?imageId=' . $imageId;
-	$response = HttpClient::get( $apiUrl, 20 );
+	$apiUrl		= SITE_URL_API_REST . '/images?imageId=' . $imageId . '&nsfw=X';
+	$response	= HttpClient::get( $apiUrl, 20 );
 	if( $response['ok'] ) {
 		$decoded = json_decode( $response['body'], true );
 		if( is_array( $decoded ) ) {
@@ -95,7 +97,7 @@ function resolveImageUrlFromCivitaiById( int $imageId ): string {
 		}
 	}
 
-	// API lookup failed or returned no items — scrape og:image from the image page
+	// Fallback for images missing from API
 	$pageUrl      = SITE_URL_IMAGES . '/' . $imageId;
 	$pageResponse = HttpClient::get( $pageUrl, 20 );
 	if( $pageResponse['ok'] ) {
@@ -219,8 +221,13 @@ function selectWorkflowFromEntries( array $entries ): array {
 			return false;
 		}
 
-		if( isset( $decoded['nodes'] ) || isset( $decoded['last_node_id'] ) || isset( $decoded['prompt'] ) || isset( $decoded['extra_data'] ) ) {
+		if( isset( $decoded['nodes'] ) || isset( $decoded['last_node_id'] ) || isset( $decoded['extra_data'] ) ) {
 			return true;
+		}
+		// 'prompt' only counts as a workflow indicator when it is a node map (ComfyUI format),
+		// not when it is a plain string (Civitai/A1111 embedded JSON has prompt as a string).
+		if( isset( $decoded['prompt'] ) && is_array( $decoded['prompt'] ) ) {
+			return $looksLikeComfyPromptMap( $decoded['prompt'] );
 		}
 
 		return $looksLikeComfyPromptMap( $decoded );
@@ -322,7 +329,7 @@ function resolveImageUrlFromRestApi( int $imageId ): string {
 		return '';
 	}
 
-	$response = HttpClient::get( SITE_URL_API_REST . '/images?imageId=' . $imageId, 20 );
+	$response = HttpClient::get( SITE_URL_API_REST . '/images?imageId=' . $imageId . '&nsfw=X', 20 );
 	if( !$response['ok'] ) {
 		return '';
 	}
@@ -438,19 +445,25 @@ function buildImageUrlCandidates( string $callerUrl, int $imageId ): array {
 try {
 	$resolvedImageId	= $imageId > 0 ? $imageId : extractImageIdFromPageUrl( $imagePageUrl );
 
-	// Fast path: restore from local JSDC cache (avoids slow Civitai image download)
+	// Fast path: restore from local JSDC cache (avoids slow Civitai image download).
+	// Only use the cache for real ComfyUI workflows. Inferred A1111 workflows are stored
+	// under P-* group hashes — skip them so the image is re-downloaded and correctly
+	// classified (A1111 parameters, not a ComfyUI workflow).
 	if( $resolvedImageId > 0 ) {
 		$jsdcCacheDir = __DIR__ . '/../../cache/workflows';
-		$restored = jsdc_restore_workflow( $jsdcCacheDir, $resolvedImageId );
-		if( is_array( $restored ) ) {
-			$restoredText = json_encode( $restored, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
-			api_respond_json_and_exit( [
-				'success'			=> true,
-				'imageId'			=> $resolvedImageId,
-				'imageUrl'			=> '',
-				'sourceKeyword'	=> 'jsdc_cache',
-				'workflowText'	=> $restoredText
-			] );
+		$groupHash    = jsdc_lookup_index( $jsdcCacheDir, $resolvedImageId );
+		if( $groupHash !== null && !str_starts_with( $groupHash, 'P-' ) ) {
+			$restored = jsdc_restore_workflow( $jsdcCacheDir, $resolvedImageId );
+			if( is_array( $restored ) ) {
+				$restoredText = json_encode( $restored, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE );
+				api_respond_json_and_exit( [
+					'success'			=> true,
+					'imageId'			=> $resolvedImageId,
+					'imageUrl'			=> '',
+					'sourceKeyword'	=> 'jsdc_cache',
+					'workflowText'	=> $restoredText
+				] );
+			}
 		}
 	}
 

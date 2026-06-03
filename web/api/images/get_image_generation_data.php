@@ -163,18 +163,18 @@ function shouldRefreshTruncatedCopyAllText( string $copyAllText ): bool {
  * @param mixed $success				Success status of operation
  * @param mixed $imageId        Image ID for data being sent
  * @param mixed $copyAllText    Copy all text to include
- * @param mixed $favorite				Favorite status to include
+ * @param mixed $display				Display status to include
  * @param mixed $workflowHash   Workflow hash to include
  * @param mixed $cached         Cached status to include
  */
-function sendResponse( $success, $imageId, $copyAllText = '', $favorite = false, $workflowHash = '', $cached = true ) {
+function sendResponse( $success, $imageId, $copyAllText = '', $display = false, $workflowHash = '', $cached = true ) {
 	$workflowState = WorkflowStateManager::describeWorkflowState( $workflowHash );
 	
 	ApiResponse::sendJson( [
 		'success'           => $success,
 		'imageId'           => $imageId,
 		'copyAllText'       => $copyAllText,
-		'favorite'          => $favorite,
+		'display'           => $display,
 		'workflowHash'      => $workflowState['workflowHash'],
 		'workflowPresent'   => $workflowState['workflowHash'] !== '',
 		'workflowNull'      => $workflowState['workflowNull'],
@@ -194,13 +194,13 @@ try {
 
 	// Try to read from database first
 	$dbCopyAllText    = '';
-	$dbFavorite       = false;
+	$dbDisplay        = 0;
 	$dbWorkflowHash   = '';
 	$dbModelVersionId = 0;
 	$dbModelId        = 0;
 	$imageExists      = false;
 
-	$sql = 'SELECT copy_all_text, favorite, workflow_hash, model_version_id, model_id FROM images WHERE image_id = ? LIMIT 1';
+	$sql = 'SELECT copy_all_text, display, workflow_hash, model_version_id, model_id FROM images WHERE image_id = ? LIMIT 1';
 	$stmt = $db->prepare( $sql );
 	if( $stmt ) {
 		$stmt->bind_param( 'i', $imageId );
@@ -209,7 +209,7 @@ try {
 		if( $result && ( $row = $result->fetch_assoc() ) ) {
 			$imageExists      = true;
 			$dbCopyAllText    = ( string )( $row['copy_all_text'] ?? '' );
-			$dbFavorite       = ( bool )( $row['favorite'] ?? false );
+			$dbDisplay        = ( int )( $row['display'] ?? 0 );
 			$dbWorkflowHash   = $row['workflow_hash'] ?? '';
 			$dbModelVersionId = ( int )( $row['model_version_id'] ?? 0 );
 			$dbModelId        = ( int )( $row['model_id'] ?? 0 );
@@ -222,31 +222,27 @@ try {
 	
 	if( $imageExists && $hasGenerationText && !shouldRefreshTruncatedCopyAllText( $dbCopyAllText ) ) {
 		$db->close();
-		sendResponse( true, $imageId, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, true );
+		sendResponse( true, $imageId, $dbCopyAllText, $dbDisplay, $dbWorkflowHash, true );
 		exit;
 	}
 
-	// Fetch from Civitai API
-	$trpcInput  = json_encode( ['json' => ['id' => $imageId]] );
-	$trpcUrl    = SITE_URL_API_TRPC . '/' . SITE_TRPC_IMAGE_GEN . '?input=' . urlencode($trpcInput);
-
-	$httpResult = HttpClient::get( $trpcUrl, 20, ['Accept: application/json'] );
+	// Fetch from Civitai public REST API
+	$restUrl    = SITE_URL_API_REST . '/images?imageId=' . $imageId . '&nsfw=X';
+	$httpResult = HttpClient::get( $restUrl, 20, ['Accept: application/json'] );
 
 	if( !$httpResult['ok'] ) {
 		$db->close();
-		if( $imageExists ) {
-			sendResponse( true, $imageId, $dbCopyAllText, $dbFavorite, $dbWorkflowHash, true );
-		} else {
-			sendResponse( false, $imageId );
-		}
+		sendResponse( true, $imageId, $dbCopyAllText, $dbDisplay, $dbWorkflowHash, true );
 		exit;
 	}
 
 	// Parse API response
-	$data       = json_decode( $httpResult['body'], true );
-	$jsonRoot   = $data['result']['data']['json'] ?? [];
-	$meta       = $jsonRoot['meta'] ?? null;
-	$resources  = isset( $jsonRoot['resources'] ) && is_array( $jsonRoot['resources'] ) ? $jsonRoot['resources'] : [];
+	$data      = json_decode( $httpResult['body'], true );
+	$imageData = ( is_array( $data ) && is_array( $data['items'] ?? null ) && count( $data['items'] ) > 0 ) ? $data['items'][0] : [];
+	$rawMeta   = is_array( $imageData['meta'] ?? null ) ? $imageData['meta'] : null;
+	// imageId-based queries nest the actual params under items[0].meta.meta; fall back for flat format
+	$meta      = is_array( $rawMeta ) && is_array( $rawMeta['meta'] ?? null ) ? $rawMeta['meta'] : $rawMeta;
+	$resources = [];
 
 	$resolvedModelId        = $inputModelId !== '' ? ( int )$inputModelId : $dbModelId;
 	$resolvedModelVersionId = $inputModelVersionId !== '' ? ( int )$inputModelVersionId : $dbModelVersionId;
@@ -266,41 +262,44 @@ try {
 	}
 
 	$copyAllText  = '';
-	$favorite     = $dbFavorite;
+	$display      = $dbDisplay;
 
 	if( !is_array( $meta ) ) {
 		$db->close();
-		sendResponse( true, $imageId, '', $favorite, $dbWorkflowHash, false );
+		sendResponse( true, $imageId, '', $dbDisplay, $dbWorkflowHash, false );
 		exit;
 	}
 
 	$parts       = composeGenerationParts( $meta );
 	$copyAllText = $parts['copyAllText'];
 
-	// Update database with fetched generation data
+	// Update database with fetched generation data.
+	// Only copy_all_text and display are updated here — workflow_hash is intentionally
+	// not touched so that auto-scan can classify the image correctly (A1111 vs ComfyUI)
+	// by downloading the actual image file via extract_image_workflow.php.
 	$updateSql = 'INSERT INTO images ' .
-						 '(image_id, model_id, model_version_id, copy_all_text, favorite, workflow_hash) ' .
-						 'VALUES (?, ?, ?, ?, ?, ?) ' .
-						 'ON DUPLICATE KEY UPDATE ' .
-						 '  model_id = COALESCE(NULLIF(?, 0), model_id), ' .
-						 '  model_version_id = COALESCE(NULLIF(?, 0), model_version_id), ' .
-						 '  copy_all_text = ?, ' .
-						 '  favorite = ?, ' .
-						 '  updated_at = CURRENT_TIMESTAMP';
+					 '(image_id, model_id, model_version_id, copy_all_text, display) ' .
+					 'VALUES (?, ?, ?, ?, ?) ' .
+					 'ON DUPLICATE KEY UPDATE ' .
+					 '  model_id = COALESCE(NULLIF(?, 0), model_id), ' .
+					 '  model_version_id = COALESCE(NULLIF(?, 0), model_version_id), ' .
+					 '  copy_all_text = ?, ' .
+					 '  display = ?, ' .
+					 '  updated_at = CURRENT_TIMESTAMP';
 
 	$updateStmt = $db->prepare( $updateSql );
 	if( $updateStmt ) {
-		$updateStmt->bind_param( 'iiisisiisi',
+		$updateStmt->bind_param( 'iiisiiisi',
 			$imageId, $resolvedModelId, $resolvedModelVersionId,
-			$copyAllText, $favorite, $dbWorkflowHash,
+			$copyAllText, $display,
 			$resolvedModelId, $resolvedModelVersionId,
-			$copyAllText, $favorite );
+			$copyAllText, $display );
 		$updateStmt->execute();
 		$updateStmt->close();
 	}
 
 	$db->close();
-	sendResponse( true, $imageId, $copyAllText, $favorite, $dbWorkflowHash, false );
+	sendResponse( true, $imageId, $copyAllText, $display, $dbWorkflowHash, false );
 
 } catch( Exception $e ) {
 	ApiResponse::sendJson( [

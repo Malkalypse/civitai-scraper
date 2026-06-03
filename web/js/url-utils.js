@@ -34,3 +34,27 @@ export function extractFilenameFromUrl( url ) {
 	const filename = parts[parts.length - 1] || '';
 	return filename.trim();
 }
+
+const CIVITAI_B2_BASE = 'https://image-b2.civitai.com/file/civitai-media-cache';
+
+/** Convert a Civitai image URL or bare UUID to the canonical B2 storage URL.
+ * Handles CDN URLs (image.civitai.com, image.civitai.red) and bare UUIDs.
+ * @param {string} url Civitai image URL or bare UUID
+ * @returns {string} B2 storage URL with /original path, or original value if not applicable
+ */
+export function toCivitaiOriginalUrl( url ) {
+	if ( !url || typeof url !== 'string' ) return url;
+
+	// Bare UUID — no http prefix (returned by Civitai tRPC/gallery APIs)
+	if ( !url.startsWith( 'http' ) ) {
+		return `${ CIVITAI_B2_BASE }/${ url }/original`;
+	}
+
+	// CDN URL (image.civitai.com or image.civitai.red): extract UUID (second path segment)
+	const match = url.match( /^https?:\/\/image\.civitai\.(?:com|red)\/[^/]+\/([^/?#]+)/i );
+	if ( match ) {
+		return `${ CIVITAI_B2_BASE }/${ match[1] }/original`;
+	}
+
+	return url;
+}

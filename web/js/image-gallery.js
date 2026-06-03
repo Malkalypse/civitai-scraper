@@ -1,7 +1,7 @@
 import { AppState, output } from './app-context.js';
 import { waitForWorkflowSectionToBeHidden, applyImageCardFilters } from './filters.js';
-import { checkCached, downloadAndCache, imageIdFromUrl, syncCopyAllPreviewWidth, queueCopyAllPreviewHydration, toggleImageFavorite } from './image-cache.js';
-import { copyImageWorkflow, analyzeImageWorkflow, retrySingleImageWorkflowScan } from './workflow.js';
+import { checkCached, downloadAndCache, imageIdFromUrl, toCivitaiOriginalUrl, syncCopyAllPreviewWidth, queueCopyAllPreviewHydration, toggleImageFavorite, dismissImage } from './image-cache.js';
+import { analyzeImageWorkflow, retrySingleImageWorkflowScan, autoScanWorkflows } from './workflow.js';
 import { escapeHtml } from './dom-utils.js';
 
 /** Initialize event handlers for the image gallery */
@@ -14,12 +14,6 @@ function initializeImageGalleryEventHandlers() {
 		const fullscreenVideo = event.target.closest( 'video[data-action="request-fullscreen"]' );
 		if( fullscreenVideo && output.contains( fullscreenVideo ) ) {
 			fullscreenVideo.requestFullscreen();
-			return;
-		}
-
-		const workflowCopyBtn = event.target.closest( '.workflow-copy-btn' );
-		if( workflowCopyBtn && output.contains( workflowCopyBtn ) ) {
-			copyImageWorkflow( workflowCopyBtn );
 			return;
 		}
 
@@ -39,6 +33,13 @@ function initializeImageGalleryEventHandlers() {
 		const favoriteCheckbox = event.target.closest( '.favorite-checkbox' );
 		if( favoriteCheckbox && output.contains( favoriteCheckbox ) ) {
 			toggleImageFavorite( favoriteCheckbox );
+		}
+	} );
+
+	output.addEventListener( 'click', ( event ) => {
+		const dismissBtn = event.target.closest( '.image-dismiss-btn' );
+		if( dismissBtn && output.contains( dismissBtn ) ) {
+			dismissImage( dismissBtn );
 		}
 	} );
 
@@ -62,6 +63,12 @@ export function updateThumbnailSize( size ) {
 	allVideos.forEach( video => {
 		video.style.maxWidth = size + 'px';
 		video.style.maxHeight = size + 'px';
+	} );
+
+	requestAnimationFrame( () => {
+		document.querySelectorAll( '#carouselContainer .image-card, #galleryContainer .image-card' ).forEach(
+			card => syncCopyAllPreviewWidth( card )
+		);
 	} );
 }
 
@@ -249,7 +256,13 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 						if( shouldDelayBeforeRemoteDownload ) {
 							await new Promise( resolve => setTimeout( resolve, 1500 ) );
 						}
-						const { url: cachedUrl, wasDownloaded } = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
+						const { url: cachedUrl, wasDownloaded, failed } = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
+						if( failed ) {
+							const slot = slotElements[info.originalIndex];
+							if( slot ) { slot.remove(); }
+							shouldDelayBeforeRemoteDownload = true;
+							continue;
+						}
 						displayUrl = cachedUrl;
 						shouldDelayBeforeRemoteDownload = wasDownloaded;
 					} else {
@@ -260,34 +273,38 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					if( info.isVideo ) {
 						const mp4Url = info.url.replace( /\.webm$/, '.mp4' );
 						imageHtml = `
-							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
-								<video style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px; width: auto; height: auto; border-radius: 4px; border: 1px solid #444; display: block; cursor: pointer;"
-										playsinline loop muted autoplay
-										data-action="request-fullscreen">
-									<source src="${escapeHtml( mp4Url )}" type="video/mp4">
-								</video>
-							</div>`;
-					} else {
-						const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
-						imageHtml = `
-							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
-								<a href="${escapeHtml( info.linkUrl || info.originalUrl )}" target="_blank">
-									<img src="${escapeHtml( displayUrl )}"
-										 alt="Image ${info.renderPosition}"
-										 style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px; width: auto; height: auto; border-radius: 4px; border: 1px solid #444; display: block;"
-										 loading="lazy">
-								</a>
-								<label style="margin-top: 6px; font-size: 11px; color: #cfd8dc; display: flex; align-items: center; gap: 6px;">
+						<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="">
+							<video style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px;"
+									playsinline loop muted autoplay
+									data-action="request-fullscreen">
+								<source src="${escapeHtml( mp4Url )}" type="video/mp4">
+							</video>
+						</div>`;
+				} else {
+					const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
+					imageHtml = `
+						<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-dismissed="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="">
+							<a href="${escapeHtml( info.linkUrl || info.originalUrl )}" target="_blank">
+								<img src="${escapeHtml( displayUrl )}"
+									 alt="Image ${info.renderPosition}"
+									 style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px;"
+									 loading="lazy">
+							</a>
+							<div class="favorite-row">
+								<label>
 									<input type="checkbox" class="favorite-checkbox" data-image-id="${imageId || ''}">
 									Favorite
 								</label>
-								<div class="workflow-actions" style="margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-									<button type="button" class="workflow-copy-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Copy Workflow</button>
-									<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Analyze Workflow</button>
-								</div>
-								<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none; background: transparent; border: none; padding: 0; cursor: pointer; text-decoration: underline;">No Workflow</button>
-							</div>`;
-					}
+								<button type="button" class="image-dismiss-btn" data-image-id="${imageId || ''}">
+									<img src="icons/close-square-svgrepo-com.svg" alt="Dismiss">
+								</button>
+							</div>
+							<div class="workflow-actions">
+								<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}">Analyze Workflow</button>
+							</div>
+							<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan">No Workflow</button>
+						</div>`;
+				}
 
 					const slot = slotElements[info.originalIndex];
 					if( !slot ) {
@@ -295,6 +312,9 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					}
 
 					slot.innerHTML = imageHtml;
+					if( info.isVideo ) {
+						slot.querySelector( 'source' )?.addEventListener( 'error', () => slot.remove(), { once: true } );
+					}
 					renderedCount++;
 					if( !info.isVideo ) {
 						const card = slot.firstElementChild;
@@ -314,7 +334,11 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 				}
 
 				container.dataset.loading = 'false';
-				setStatus( 'carouselStatus', `(${renderedCount})`, true );
+				container.dataset.total = String( renderedCount );
+				let visibleCarousel = 0;
+				container.querySelectorAll( '.image-container' ).forEach( el => { if( el.style.display !== 'none' ) visibleCarousel++; } );
+				setStatus( 'carouselStatus', `(${visibleCarousel}/${renderedCount})` );
+				autoScanWorkflows( container );
 			};
 
 			loadCarouselImages();
@@ -426,7 +450,8 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 									clearTimeout( abortTimer );
 								}
 								const apiData = await apiResp.json();
-								const cdnUrl = apiData?.items?.[0]?.url || null;
+								const rawCdnUrl = apiData?.items?.[0]?.url || null;
+								const cdnUrl = rawCdnUrl ? toCivitaiOriginalUrl( rawCdnUrl ) : null;
 								if( cdnUrl ) {
 									info.originalUrl = cdnUrl;
 									const result = await downloadAndCache( cdnUrl, info.linkUrl );
@@ -445,6 +470,12 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 							}
 						} else {
 							const result = await downloadAndCache( info.url, info.linkUrl || info.originalUrl );
+							if( result.failed ) {
+								const slot = slotElements[info.originalIndex];
+								if( slot ) { slot.remove(); }
+								shouldDelayBeforeRemoteDownload = true;
+								continue;
+							}
 							displayUrl = result.url;
 							wasDownloaded = result.wasDownloaded;
 						}
@@ -457,34 +488,38 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					if( info.isVideo ) {
 						const mp4Url = info.url.replace( /\.webm$/, '.mp4' );
 						imageHtml = `
-							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
-								<video style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px; width: auto; height: auto; border-radius: 4px; border: 1px solid #444; display: block; cursor: pointer;"
-										playsinline loop muted autoplay
-										data-action="request-fullscreen">
-									<source src="${escapeHtml( mp4Url )}" type="video/mp4">
-								</video>
-							</div>`;
-					} else {
-						const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
-						imageHtml = `
-							<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="" style="flex: 0 0 auto; display: inline-flex; flex-direction: column; align-items: flex-start;">
-								<a href="${escapeHtml( info.linkUrl || info.originalUrl )}" target="_blank">
-									<img src="${escapeHtml( displayUrl )}"
-										 alt="Gallery Image ${info.renderPosition}"
-										 style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px; width: auto; height: auto; border-radius: 4px; border: 1px solid #444; display: block;"
-										 loading="lazy">
-								</a>
-								<label style="margin-top: 6px; font-size: 11px; color: #cfd8dc; display: flex; align-items: center; gap: 6px;">
+						<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="">
+							<video style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px;"
+									playsinline loop muted autoplay
+									data-action="request-fullscreen">
+								<source src="${escapeHtml( mp4Url )}" type="video/mp4">
+							</video>
+						</div>`;
+				} else {
+					const imageId = imageIdFromUrl( info.linkUrl || info.originalUrl );
+					imageHtml = `
+						<div class="image-card" data-favorite-loaded="0" data-favorite="0" data-dismissed="0" data-workflow-loaded="0" data-workflow-present="0" data-workflow-null="0" data-workflow-id="" data-workflow-revision="">
+							<a href="${escapeHtml( info.linkUrl || info.originalUrl )}" target="_blank">
+								<img src="${escapeHtml( displayUrl )}"
+									 alt="Gallery Image ${info.renderPosition}"
+									 style="max-width: ${AppState.ui.thumbnailSize}px; max-height: ${AppState.ui.thumbnailSize}px;"
+									 loading="lazy">
+							</a>
+							<div class="favorite-row">
+								<label>
 									<input type="checkbox" class="favorite-checkbox" data-image-id="${imageId || ''}">
 									Favorite
 								</label>
-								<div class="workflow-actions" style="margin-top: 6px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
-									<button type="button" class="workflow-copy-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Copy Workflow</button>
-									<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Analyze Workflow</button>
-								</div>
-								<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan" style="margin-top: 6px; font-size: 11px; color: #bf4547; display: none; background: transparent; border: none; padding: 0; cursor: pointer; text-decoration: underline;">No Workflow</button>
-							</div>`;
-					}
+								<button type="button" class="image-dismiss-btn" data-image-id="${imageId || ''}">
+									<img src="icons/close-square-svgrepo-com.svg" alt="Dismiss">
+								</button>
+							</div>
+							<div class="workflow-actions">
+								<button type="button" class="workflow-analyze-btn" data-image-id="${imageId || ''}" data-image-page-url="${escapeHtml( info.linkUrl || info.originalUrl )}" data-full-image-url="${escapeHtml( info.originalUrl || '' )}">Analyze Workflow</button>
+							</div>
+							<button type="button" class="workflow-no-workflow" data-action="retry-workflow-scan">No Workflow</button>
+						</div>`;
+				}
 
 					const slot = slotElements[info.originalIndex];
 					if( !slot ) {
@@ -492,6 +527,9 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 					}
 
 					slot.innerHTML = imageHtml;
+					if( info.isVideo ) {
+						slot.querySelector( 'source' )?.addEventListener( 'error', () => slot.remove(), { once: true } );
+					}
 					renderedCount++;
 					if( !info.isVideo ) {
 						const card = slot.firstElementChild;
@@ -511,7 +549,11 @@ export async function loadModelImages( modelId, selectedVersion, imageLoadToken 
 				}
 
 				container.dataset.loading = 'false';
-				setStatus( 'galleryStatus', `(${renderedCount}/${totalGalleryLabel})`, true );
+				container.dataset.total = totalGalleryLabel;
+				let visibleGallery = 0;
+				container.querySelectorAll( '.image-container' ).forEach( el => { if( el.style.display !== 'none' ) visibleGallery++; } );
+				setStatus( 'galleryStatus', `(${visibleGallery}/${totalGalleryLabel})` );
+				autoScanWorkflows( container );
 			};
 
 			loadGalleryImages();

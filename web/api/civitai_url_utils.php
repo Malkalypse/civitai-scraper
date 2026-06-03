@@ -2,7 +2,21 @@
 
 class CivitaiUrl {
 
-	/** Normalize a Civitai image URL to the canonical original/original=true form.
+	/** Extract the UUID segment from a CDN URL (image.civitai.com or image.civitai.red).
+	 * CDN URL format: /{hash}/{uuid}/{params}
+	 * @param string $url CDN URL to extract UUID from
+	 * @return string|null UUID string, or null if URL does not match CDN format
+	 */
+	private static function extractUuidFromCdnUrl( string $url ): ?string {
+		$pattern = '~^(?:' . preg_quote( SITE_CDN_BASE, '~' ) . '|' . preg_quote( SITE_CDN_LEGACY, '~' ) . ')/[^/]+/([^/?#]+)~i';
+		if( preg_match( $pattern, $url, $matches ) ) {
+			return $matches[1];
+		}
+		return null;
+	}
+
+	/** Normalize a Civitai image URL to the canonical B2 storage /original form.
+	 * CDN URLs (image.civitai.com, image.civitai.red) are converted to B2 storage.
 	 * @param mixed $url URL to normalize
 	 * @return mixed Normalized URL or original value when not applicable
 	 */
@@ -24,81 +38,37 @@ class CivitaiUrl {
 			return $url;
 		}
 
-		$normalized = preg_replace(
-			'~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
-			'/original=true',
-			$url,
-			1,
-			$replacedCount
-		);
-
-		if( $replacedCount > 0 && is_string( $normalized ) ) {
-			return $normalized;
-		}
-
-		if( stripos( $url, SITE_CDN_LEGACY ) !== false ) {
-			$path = substr( $url, strlen( SITE_CDN_LEGACY ) );
-			if( preg_match( '~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches ) ) {
-				$token = $matches[1];
-				$tail = isset( $matches[2] ) ? trim( $matches[2], '/' ) : '';
-
-				if( $tail !== '' ) {
-					$tail = preg_replace( '~^(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)/?~i', '', $tail );
-					$tail = ltrim( (string)$tail, '/' );
-				}
-
-				$newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/original=true';
-				if( $tail !== '' ) {
-					$newUrl .= '/' . $tail;
-				}
-
-				return $newUrl;
-			}
+		// CDN URL: extract UUID and return canonical B2 storage URL
+		$uuid = self::extractUuidFromCdnUrl( $url );
+		if( $uuid !== null ) {
+			return SITE_STORAGE_BASE . '/' . $uuid . '/original';
 		}
 
 		return $url;
 	}
 
 
-	/** Convert a Civitai image URL to a thumbnail URL with the specified transform.
-	 * @param mixed $url Original image URL
-	 * @param string $transform Transform string to apply
-	 * @param bool $preserveExistingOptimized Whether to preserve existing optimized transforms unchanged
-	 * @return mixed URL with specified transform applied or original value when not applicable
+	/** Convert a Civitai image URL to a thumbnail URL.
+	 * CDN URLs are converted to B2 storage /original (CDN resize is unavailable for offline images;
+	 * cache_image.php resizes locally after download).
+	 * @param mixed		$url												Original image URL
+	 * @param string	$transform									Transform string (retained for B2-native and non-CDN URLs if applicable)
+	 * @param bool		$preserveExistingOptimized	Whether to preserve existing optimized transforms unchanged
+	 * @return mixed URL suitable for local caching or original value when not applicable
 	 */
 	public static function toThumbnailUrl( $url, $transform = 'anim=false,width=450,optimized=true', $preserveExistingOptimized = false ) {
-		if( !is_string( $url ) || ( stripos( $url, SITE_CDN_BASE ) === false && stripos( $url, SITE_CDN_LEGACY ) === false ) ) {
+		if( !is_string( $url ) ) {
 			return $url;
 		}
 
-		if( $preserveExistingOptimized && preg_match( '~/anim=false,(?:width|height)=\d+,optimized=true(?=/|$)~i', $url ) ) {
+		if( stripos( $url, SITE_CDN_BASE ) === false && stripos( $url, SITE_CDN_LEGACY ) === false ) {
 			return $url;
 		}
 
-		$normalized = preg_replace(
-			'~/(?:original=true|anim=false,(?:width|height)=\d+,optimized=true)(?=/|$)~i',
-			'/' . $transform,
-			$url,
-			1,
-			$replacedCount
-		);
-
-		if( $replacedCount > 0 && is_string( $normalized ) ) {
-			return $normalized;
-		}
-
-		if( stripos( $url, SITE_CDN_LEGACY ) !== false ) {
-			$path = substr( $url, strlen( SITE_CDN_LEGACY ) );
-			if( preg_match( '~^/[^/]+/([^/]+)(?:/(.*))?$~i', $path, $matches ) ) {
-				$token = $matches[1];
-				$tail = isset( $matches[2] ) ? trim( $matches[2], '/' ) : '';
-				$newUrl = SITE_CDN_BASE . '/' . SITE_CDN_HASH . '/' . $token . '/' . $transform;
-				if( $tail !== '' && stripos( $tail, 'original=true' ) !== 0 ) {
-					$newUrl .= '/' . $tail;
-				}
-
-				return $newUrl;
-			}
+		// CDN URL: extract UUID and return B2 storage URL (local cache pipeline resizes)
+		$uuid = self::extractUuidFromCdnUrl( $url );
+		if( $uuid !== null ) {
+			return SITE_STORAGE_BASE . '/' . $uuid . '/original';
 		}
 
 		return $url;

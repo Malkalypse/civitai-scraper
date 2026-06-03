@@ -104,6 +104,11 @@ export async function fetchOriginalFilename( versionId ) {
 			body: JSON.stringify( { versionId } )
 		} );
 
+		if( !response.ok ) {
+			console.warn( `get_version_filename.php returned HTTP ${ response.status } for version ${ versionId }` );
+			return '';
+		}
+
 		const result = await response.json();
 		if( result?.success && result?.filename ) {
 			console.log( `Received filename "${result.filename}" from API for version ${versionId}` );
@@ -121,7 +126,11 @@ export async function fetchOriginalFilename( versionId ) {
  */
 export async function syncTagsToDatabase( nextData, modelId ) {
 	try {
-		const tagsOnModels = nextData?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.tagsOnModels;
+		const queries = nextData?.props?.pageProps?.trpcState?.json?.queries;
+		const modelQuery = Array.isArray( queries )
+			? queries.find( q => Array.isArray( q?.state?.data?.tagsOnModels ) )
+			: null;
+		const tagsOnModels = modelQuery?.state?.data?.tagsOnModels;
 
 		if( !tagsOnModels || !Array.isArray( tagsOnModels ) || tagsOnModels.length === 0 ) {
 			console.log( 'No tags found in __NEXT_DATA__' );
@@ -169,8 +178,12 @@ export async function syncTagsToDatabase( nextData, modelId ) {
  */
 export async function syncModelsToDatabase( nextData, modelId, filename, clickedVersionId ) {
 	try {
-		const modelVersions = nextData?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.modelVersions;
-		const modelType = nextData?.props?.pageProps?.trpcState?.json?.queries?.[2]?.state?.data?.type;
+		const queries = nextData?.props?.pageProps?.trpcState?.json?.queries;
+		const modelQuery = Array.isArray( queries )
+			? queries.find( q => Array.isArray( q?.state?.data?.modelVersions ) )
+			: null;
+		const modelVersions = modelQuery?.state?.data?.modelVersions;
+		const modelType = modelQuery?.state?.data?.type;
 
 		if( !modelVersions || !Array.isArray( modelVersions ) || modelVersions.length === 0 ) {
 			console.log( 'No model versions found in __NEXT_DATA__' );

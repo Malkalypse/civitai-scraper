@@ -1,6 +1,7 @@
 <?php
 require_once __DIR__ . '/../../config/site.php';
 require_once __DIR__ . '/../api_utils.php';
+require_once __DIR__ . '/../http_utils.php';
 require_once __DIR__ . '/../filename_utils.php';
 ApiResponse::setJsonHeader();
 

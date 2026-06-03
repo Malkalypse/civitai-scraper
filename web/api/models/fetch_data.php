@@ -160,6 +160,39 @@ function getModelVersions( array $decoded ): array {
   return $query['state']['data']['modelVersions'] ?? [];
 }
 
+/** Fetch user-defined tags for a model from the local database.
+ * Returns an array of { id, tag } objects sorted alphabetically.
+ * Returns an empty array if the tables don't exist yet or the query fails.
+ */
+function getUserTagsFromDb( string $modelId ): array {
+  $db = api_db_connect();
+  if( $db->connect_error ) {
+    return [];
+  }
+  $db->set_charset( 'utf8mb4' );
+  $numericId = (int)$modelId;
+  $stmt = $db->prepare(
+    'SELECT ut.id, ut.tag FROM u_tags ut
+     JOIN model_u_tags mut ON mut.tag_id = ut.id
+     WHERE mut.model_id = ?
+     ORDER BY ut.tag ASC'
+  );
+  if( !$stmt ) {
+    $db->close();
+    return [];
+  }
+  $stmt->bind_param( 'i', $numericId );
+  $stmt->execute();
+  $result = $stmt->get_result();
+  $tags   = [];
+  while( $row = $result->fetch_assoc() ) {
+    $tags[] = ['id' => (int)$row['id'], 'tag' => $row['tag']];
+  }
+  $stmt->close();
+  $db->close();
+  return $tags;
+}
+
 /** Extract model tags from decoded __NEXT_DATA__ JSON
  * @param array $decoded Decoded JSON data from __NEXT_DATA__
  * @return array Array of model tags (or empty array)
@@ -250,6 +283,7 @@ function buildUrlInfo( string $modelInput, string $url, ?int $versionId ): array
  * @param array|null  $selectedVersion        Selected model version (or null)
  * @param string|null $versionSelectionMethod Explanation of how version was selected
  * @param array       $modelTags              Array of model tags
+ * @param array       $userTags               Array of user tags { id, tag }
  * @param array       $decoded                Decoded __NEXT_DATA__ as associative array
  * @return array The structured response to be returned as JSON
  */
@@ -260,6 +294,7 @@ function buildSuccessResponse(
   $selectedVersion,
   ?string $versionSelectionMethod,
   array   $modelTags,
+  array   $userTags,
   array   $decoded
 ): array {
   //global $debug;
@@ -276,6 +311,7 @@ function buildSuccessResponse(
     'selectedVersion'         => $selectedVersion,
     'versionSelectionMethod'  => $versionSelectionMethod,
     'modelTags'               => $modelTags,
+    'userTags'                => $userTags,
     'data'                    => $decoded,
     //'debug'                   => $debug
   ];
@@ -314,6 +350,7 @@ try {
 
   $modelVersions  = getModelVersions( $decoded );
   $modelTags      = getModelTags( $decoded );
+  $userTags       = getUserTagsFromDb( $modelId );
   $selection      = selectModelVersion( $modelVersions, $versionId );
   $urlInfo        = buildUrlInfo( $modelInput, $url, $versionId );
 
@@ -325,6 +362,7 @@ try {
       $selection['selectedVersion'],
       $selection['versionSelectionMethod'],
       $modelTags,
+      $userTags,
       $decoded
     )
   );

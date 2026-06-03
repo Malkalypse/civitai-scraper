@@ -24,79 +24,10 @@ a:hover {
   color: #fff;
 }
 
+/* sidebar styles are in packages/melodeon/melodeon.css */
+
 .sidebar {
   width: 300px;
-  background-color: #25262b;
-  border-right: 1px solid #444;
-  overflow-y: auto;
-  padding: 20px;
-}
-
-.sidebar h2 {
-  color: #4CAF50;
-  font-size: 18px;
-  margin-bottom: 15px;
-  position: sticky;
-  top: 0;
-  /*background-color: #2a2a2a;*/
-  padding: 10px 0;
-  z-index: 1;
-}
-
-.folder-item {
-  margin-bottom: 15px;
-}
-
-.folder-name {
-  font-weight: bold;
-  cursor: pointer;
-  padding: 5px;
-  border-radius: 3px;
-  user-select: none;
-}
-
-.folder-triangle {
-  display: inline-block;
-  transition: transform 0.2s ease;
-  font-size: 10px;
-  margin-right: 5px;
-}
-
-.folder-name:hover {
-  background-color: #3a3a3a;
-}
-
-.file-list {
-  
-  list-style: none;
-  padding-left: 15px;
-  margin-top: 5px;
-}
-
-.file-item {
-  color: rgb(77, 171, 247);     
-  padding: 3px 5px;
-  margin: 2px 0;
-  cursor: pointer;
-  border-radius: 3px;
-  font-size: 14px;
-}
-
-.file-item:hover {
-  /*background-color: #3a3a3a;*/
-  color: #fff;
-}
-
-.file-item.missing-file {
-  color: #868e96;
-}
-
-.file-item.missing-file:hover {
-  color: #adb5bd;
-}
-
-.file-item.hidden {
-  display: none;
 }
 
 .main-content {
@@ -422,6 +353,192 @@ button:disabled {
   /*font-weight: bold;*/
 }
 
+.user-tag {
+  padding: 2px 8px;
+  background-color: #343a40;
+  border-radius: 3px;
+  color: #fefefe;
+  font-size: 10px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 1px;
+  user-select: none;
+}
+
+.user-tag-remove {
+  cursor: pointer;
+  color: #868e96;
+  font-size: 12px;
+  line-height: 1;
+  padding: 0 1px;
+}
+
+.user-tag-remove:hover {
+  color: #ff6b6b;
+}
+
+.user-tag-add {
+  padding: 2px 8px;
+  background-color: #2b3038;
+  border: 1px dashed #555;
+  border-radius: 3px;
+  color: #adb5bd;
+  font-size: 13px;
+  display: inline-block;
+  margin: 1px;
+  cursor: pointer;
+  min-width: 24px;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.user-tag-add:hover {
+  border-color: #adb5bd;
+  color: #fefefe;
+}
+
+.user-tag-add[contenteditable="true"] {
+  min-width: 80px;
+  color: #fefefe;
+  border-color: #74c0fc;
+  outline: none;
+  cursor: text;
+}
+
+.image-dismiss-btn {
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.image-dismiss-btn img {
+  width: 14px;
+  height: 14px;
+  /* colorize to rgb(193, 194, 197) */
+  filter: brightness(0) invert(1) brightness(0.762);
+}
+
+.image-dismiss-btn:hover img {
+  filter: brightness(0) invert(1) brightness(1);
+}
+
+.image-card {
+  flex: 0 0 auto;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.image-card > a > img,
+.image-card video {
+  width: auto;
+  height: auto;
+  border-radius: 4px;
+  border: 1px solid #444;
+  display: block;
+}
+
+.image-card video {
+  cursor: pointer;
+}
+
+.favorite-row {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.favorite-row label {
+  font-size: 11px;
+  color: #cfd8dc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.workflow-actions {
+  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflow-analyze-btn {
+  width: 100%;
+  padding: 4px 8px;
+  background: #2a2a3e;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+  width: 100%;
+}
+
+.workflow-no-workflow {
+  margin-top: 6px;
+  font-size: 11px;
+  color: #bf4547;
+  display: none;
+  background: transparent;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+/* Type filter dropdown (replaces "Hide Non-Workflow" button) */
+.type-filter-dropdown {
+  position: relative;
+}
+
+.type-filter-dropdown summary {
+  list-style: none;
+  user-select: none;
+  padding: 4px 8px;
+  background: #2a2a3e;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.type-filter-dropdown summary::-webkit-details-marker {
+  display: none;
+}
+
+.type-filter-panel {
+  position: absolute;
+  top: calc(100% + 2px);
+  left: 0;
+  z-index: 100;
+  background: #2a2a3e;
+  border: 1px solid #444;
+  border-radius: 3px;
+  padding: 6px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: max-content;
+}
+
+.type-filter-panel label {
+  font-size: 11px;
+  color: #cfd8dc;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
 .media-container {
   position: relative;
   display: inline-block;
@@ -565,3 +682,6 @@ button:disabled {
 .workflow-cell-content {
   font-weight: normal;
 }
+
+
+

@@ -10,9 +10,10 @@ require_once __DIR__ . '/image_cache_manager_utils.php';
 ApiResponse::setJsonHeader();
 
 // Input parameters
-$input    = json_decode( file_get_contents( 'php://input' ), true );
-$action   = $input['action'] ?? null;
-$modelId  = $input['modelId'] ?? null;
+$input      = json_decode( file_get_contents( 'php://input' ), true );
+$action     = $input['action'] ?? null;
+$modelId    = $input['modelId'] ?? null;
+$versionId  = isset( $input['versionId'] ) ? (int)$input['versionId'] : 0;
 
 // Cache directories
 $cacheDir       = __DIR__ . '/../../cache/images';
@@ -30,29 +31,42 @@ switch( $action ) {
     $modelSize = 0;
     $fileCount = 0;
 
-    [$metadataByModel] = $cache->loadGenerationMetadataByModel();
-    $modelFilenames = [];
+    // Build a set of imageIds belonging to this model via DB (fast — avoids scanning 100k JSON files)
+    $modelImageIds = [];
     if( $modelId !== null && $modelId !== '' ) {
-      $modelFilenames = isset( $metadataByModel[( string )$modelId] )
-        ? $metadataByModel[( string )$modelId]
-        : [];
+      $db = api_db_connect();
+      if( !$db->connect_error ) {
+        $stmt = $db->prepare( 'SELECT image_id FROM images WHERE model_id = ?' );
+        if( $stmt ) {
+          $numericModelId = (int)$modelId;
+          $stmt->bind_param( 'i', $numericModelId );
+          $stmt->execute();
+          $result = $stmt->get_result();
+          while( $row = $result->fetch_assoc() ) {
+            $modelImageIds[(int)$row['image_id']] = true;
+          }
+          $stmt->close();
+        }
+        $db->close();
+      }
     }
-    
+
     $files = glob( $cacheDir . '/*' );
     foreach( $files as $file ) {
       if( is_file( $file ) && strtolower( pathinfo( $file, PATHINFO_EXTENSION ) ) !== 'json' ) {
         $fileSize = ImageCacheManager::getFileSizeBytes( $file );
         $totalSize += $fileSize;
         $fileCount++;
-        
-        // Check if this file belongs to the current model
-        $filename = basename( $file );
-        if( $modelId && isset( $modelFilenames[$filename] ) ) {
-          $modelSize += $fileSize;
+
+        if( $modelId && !empty( $modelImageIds ) ) {
+          $fileImageId = (int)pathinfo( $file, PATHINFO_FILENAME );
+          if( $fileImageId > 0 && isset( $modelImageIds[$fileImageId] ) ) {
+            $modelSize += $fileSize;
+          }
         }
       }
     }
-    
+
     ApiResponse::sendJson( [
       'totalSize'   => $totalSize,
       'totalSizeMB' => round( $totalSize / 1048576, 2 ),

@@ -154,19 +154,6 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 			await extractAndPersistWorkflowForElement( target, { renderAnalysis: false, keepOriginals } );
 			processed += 1;
 		} catch( error ) {
-			if( typeof error === 'object' && error !== null && error.errorCode === 'PARAMETERS_FOUND' ) {
-				try {
-					await markImageParametersAsPresent( imageId, '1' );
-					applyWorkflowUiToAllCardsForImageId( imageId, 'parameters', 'P-1' );
-					processed += 1;
-					continue;
-				} catch( parameterPersistError ) {
-					failures += 1;
-					console.warn( `Parameter classification failed for image ${imageId}:`, parameterPersistError );
-					continue;
-				}
-			}
-
 			if( shouldMarkWorkflowAsMissing( error ) ) {
 				await markWorkflowMissingForElement( target, error );
 				processed += 1;
@@ -188,6 +175,46 @@ export async function scanMissingImageWorkflows( button, options = {} ) {
 
 	const modeLabel = rescanAll ? 'Workflow rescan complete.' : 'Workflow scan complete.';
 	alert( `${modeLabel} Scanned: ${scanned}, Updated: ${processed}, Skipped: ${skipped}, Errors: ${failures}` );
+}
+
+/** Silently scan cards within a container that have no workflow DB entry and persist their state.
+ * Used for auto-scanning carousel and gallery images on first load.
+ * @param {HTMLElement|null} container element to scope the scan to
+ */
+export async function autoScanWorkflows( container ) {
+	if( !container ) {
+		return;
+	}
+
+	const buttons = Array.from( container.querySelectorAll( '.workflow-analyze-btn' ) );
+	const uniqueByImageId = new Map();
+	for( const button of buttons ) {
+		const imageId = Number( button?.dataset?.imageId || 0 );
+		if( Number.isInteger( imageId ) && imageId > 0 && !uniqueByImageId.has( imageId ) ) {
+			uniqueByImageId.set( imageId, button );
+		}
+	}
+
+	for( const [imageId, button] of uniqueByImageId ) {
+		try {
+			const state = await fetchCachedWorkflowEntryState( imageId );
+			if( state.hasWorkflowEntry && !state.workflowNull ) {
+				const workflowState = state.parametersPresent ? 'parameters' : 'workflow';
+				applyWorkflowUiToAllCardsForImageId( imageId, workflowState, state.workflowHash );
+				continue;
+			}
+
+			if( state.workflowNull ) {
+				continue;
+			}
+
+			await extractAndPersistWorkflowForElement( button, { renderAnalysis: false, keepOriginals: true } );
+		} catch( error ) {
+			if( shouldMarkWorkflowAsMissing( error ) ) {
+				await markWorkflowMissingForElement( button, error ).catch( () => {} );
+			}
+		}
+	}
 }
 
 /** Collect one workflow action button per unique image id from current DOM
@@ -312,7 +339,10 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 
 	const result = await fetchImageWorkflowData( imageId, imagePageUrl, fullImageUrl );
 	if( result.mode === 'parameters' ) {
-		const modelFilename = buildModelFilenameForWorkflow( AppState.model.currentFilename, AppState.model.currentBaseModel );
+		const isCheckpoint = ( AppState.model.currentModelType || '' ).toLowerCase() === 'checkpoint';
+		const modelFilename = isCheckpoint
+			? buildModelFilenameForWorkflow( AppState.model.currentFilename, AppState.model.currentBaseModel )
+			: '';
 		const inferredWorkflow = buildWorkflowAnalysisFromParametersText( result.parametersText, imageId, modelFilename );
 		const inferredWorkflowJsonText = inferredWorkflow ? buildInferredWorkflowJsonText( inferredWorkflow ) : '';
 
@@ -373,7 +403,7 @@ async function extractAndPersistWorkflowForElement( referenceElement, { renderAn
 
 	if( renderAnalysis ) {
 		const nodePortDefinitions = await fetchNodePortDefinitions( analysisData.nodes ); // workflow/analysis.js
-		renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitions, { exportableWorkflowJsonText: '' } ); // workflow/rendering.js
+		renderWorkflowAnalysis( imageId, analysisData, nodePortDefinitions, { exportableWorkflowJsonText: result.workflowText } ); // workflow/rendering.js
 
 		const workflowNodeList = document.getElementById( 'workflowAnalysisNodeList' );
 		if( workflowNodeList ) {

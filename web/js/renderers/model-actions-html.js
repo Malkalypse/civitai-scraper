@@ -26,6 +26,28 @@ export function buildModelTagsHtml( modelTags ) {
 	return modelTagsHtml;
 }
 
+/** Build HTML for the user tags section.
+ * Renders each tag with a "-" remove button, followed by the "+" add button.
+ * @param {Array<{id: number, tag: string}>} userTags
+ * @param {string|number} modelId  Current model ID (stored on the add button for event handling)
+ * @returns {string}
+ */
+export function buildUserTagsHtml( userTags, modelId ) {
+	let html = '';
+
+	userTags.forEach( ( { id, tag } ) => {
+		const activeClass = AppState.filters.activeUserTags.has( tag ) ? ' active' : '';
+		html += `<div class="user-tag${activeClass}" data-tag-id="${id}" data-tag="${escapeHtml( tag )}">` +
+			`<span class="user-tag-text">${escapeHtml( tag )}</span>` +
+			`<span class="user-tag-remove" title="Remove tag">−</span>` +
+			`</div>`;
+	} );
+
+	html += `<div class="user-tag-add" data-model-id="${escapeHtml( String( modelId ) )}">+</div>`;
+
+	return html;
+}
+
 
 /** Build complete HTML for model information and actions view
  * @param {Object} params									Parameters for building HTML
@@ -204,9 +226,20 @@ export function buildThumbnailControlsSectionHtml() {
 export function buildImagesSectionHtml() {
 	return `
 		<div class="info">
-			<div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap;">
-				<button type="button" id="generationToggleNonWorkflowBtn" data-toggle-type="non-workflow" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Non-Workflow</button>
-				<button type="button" id="generationToggleNonFavoritesBtn" data-toggle-type="non-favorites" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">Hide Non-Favorites</button>
+			<div style="display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center;">
+				<details class="type-filter-dropdown">
+					<summary class="type-filter-toggle">Type Filter ▾</summary>
+					<div class="type-filter-panel">
+						<label><input type="checkbox" id="showWorkflowFilter"    data-filter-type="showWorkflow"   checked> Workflow (ComfyUI)</label>
+						<label><input type="checkbox" id="showParametersFilter"  data-filter-type="showParameters" checked> Parameters (Auto1111)</label>
+						<label><input type="checkbox" id="showNoDataFilter"      data-filter-type="showNoData"     checked> No Data</label>
+					</div>
+				</details>
+				<select id="generationFavoriteFilter" style="padding: 4px 8px; background: #2a2a3e; color: #fff; border: 1px solid #444; border-radius: 3px; cursor: pointer; font-size: 11px;">
+					<option value="favorites">Favorites</option>
+					<option value="normal">Normal</option>
+					<option value="show-hidden">Show Hidden</option>
+				</select>
 			</div>
 			<div id="workflowFilterSection" style="margin-bottom: 10px; display: flex; flex-direction: column; gap: 6px;">
 				<div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap;">

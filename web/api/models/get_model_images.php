@@ -229,36 +229,27 @@ try {
 		
 	}
 	
-	// Fetch gallery images from tRPC endpoint (paginate through all cursors)
-	$cursor								= null;
+	// Fetch gallery images from the public REST API (paginate through all pages)
 	$maxPages							= 50;
 	$pagesFetched					= 0;
 	$seenGalleryKeys			= [];
 	$hasMoreGalleryPages	= false;
 
+	$page = 1;
+
 	while( $pagesFetched < $maxPages ) {
-		$input = [
-			'json' => [
-				'period'					=> 'AllTime',
-				'sort'						=> 'Newest',
-				'modelVersionId'	=> (int)$versionId,
-				'cursor'					=> $cursor,
-			],
-			'meta' => [
-				'values' => [
-					'cursor' => $cursor === null ? ['undefined'] : [$cursor]
-				]
-			]
+		$params = [
+			'modelVersionId'	=> (int)$versionId,
+			'limit'						=> 200,
+			'sort'						=> 'Newest',
+			'period'					=> 'AllTime',
+			'nsfw'						=> 'X',
+			'page'						=> $page,
 		];
 
-		$inputJson			= json_encode( $input );
-		$galleryApiUrl	= SITE_URL_API_TRPC . '/' . SITE_TRPC_GALLERY . '?input=' . urlencode( $inputJson );
+		$galleryApiUrl	= SITE_URL_API_REST . '/images?' . http_build_query( $params );
 
-		$galleryHeaders = [
-			'Accept: */*',
-			'Content-Type: application/json',
-		];
-
+		$galleryHeaders = [ 'Accept: application/json' ];
 		if( defined('SITE_AUTH_COOKIE') && is_string( SITE_AUTH_COOKIE ) && trim( SITE_AUTH_COOKIE ) !== '') {
 			$galleryHeaders[] = 'Cookie: ' . trim( SITE_AUTH_COOKIE );
 		}
@@ -270,81 +261,60 @@ try {
 		}
 
 		$galleryData = json_decode( $galleryResult['body'], true );
-		if( !is_array( $galleryData ) || !isset( $galleryData['result']['data']['json'] ) || !is_array( $galleryData['result']['data']['json'] ) ) {
+		if( !is_array( $galleryData ) || !isset( $galleryData['items'] ) || !is_array( $galleryData['items'] ) ) {
 			break;
 		}
 
-		$galleryJson	= $galleryData['result']['data']['json'];
-		$items				= isset( $galleryJson['items'] ) && is_array( $galleryJson['items'] ) ? $galleryJson['items'] : [];
-
-		foreach( $items as $item ) {
-			// Each item is a post that contains an array of images
-			if( isset( $item['images'] ) && is_array( $item['images'] ) ) {
-				foreach( $item['images'] as $img ) {
-					if( !isset( $img['url'] ) ) {
-						continue;
-					}
-
-					$thumbTransform	= buildCivitaiThumbnailTransform( $img, 450 );
-					$rawUrl					= $img['url'];
-					$url						= $rawUrl;
-
-					// Build proper Civitai image URL
-					if( strpos( $url, 'http' ) !== 0) {
-						// URL is just the UUID; build legacy CDN URL (account hash is valid there)
-						$url = SITE_CDN_LEGACY . '/' . SITE_CDN_HASH . '/' . $url . '/' . $thumbTransform;
-					}
-
-					$url = CivitaiUrl::toThumbnailUrl( $url, $thumbTransform );
-
-					$originalUrl = $rawUrl;
-					if( strpos( $originalUrl, 'http' ) !== 0 ) {
-						$originalUrl = SITE_STORAGE_BASE . '/' . $originalUrl . '/original';
-					}
-					$originalUrl = CivitaiUrl::toOriginalUrl( $originalUrl );
-
-					$resolvedLinkUrl = resolveCivitaiImagePageUrl( $img );
-					$dedupeKey = is_string( $resolvedLinkUrl ) && $resolvedLinkUrl !== ''
-						? $resolvedLinkUrl
-						: ( is_string( $originalUrl ) ? $originalUrl : $url );
-
-					if( isset( $seenGalleryKeys[$dedupeKey] ) ) {
-						continue;
-					}
-					$seenGalleryKeys[$dedupeKey] = true;
-
-					$imageData = [
-						'url'					=> $url,
-						'originalUrl'	=> $originalUrl
-					];
-
-					if( $resolvedLinkUrl !== null ) {
-						$imageData['linkUrl'] = $resolvedLinkUrl;
-					}
-
-					if( isset( $img['type'] ) && $img['type'] === 'video' ) {
-						$imageData['type'] = 'video';
-					}
-
-					if( isset( $img['metadata'] ) ) {
-						$imageData['metadata'] = $img['metadata'];
-					}
-
-					$galleryImages[] = $imageData;
-				}
+		foreach( $galleryData['items'] as $img ) {
+			if( !isset( $img['url'] ) ) {
+				continue;
 			}
+
+			$thumbTransform	= buildCivitaiThumbnailTransform( $img, 450 );
+			$rawUrl					= $img['url'];
+			$url						= CivitaiUrl::toThumbnailUrl( $rawUrl, $thumbTransform );
+			$originalUrl		= CivitaiUrl::toOriginalUrl( $rawUrl );
+
+			$resolvedLinkUrl = resolveCivitaiImagePageUrl( $img );
+			$dedupeKey = is_string( $resolvedLinkUrl ) && $resolvedLinkUrl !== ''
+				? $resolvedLinkUrl
+				: ( is_string( $originalUrl ) ? $originalUrl : $url );
+
+			if( isset( $seenGalleryKeys[$dedupeKey] ) ) {
+				continue;
+			}
+			$seenGalleryKeys[$dedupeKey] = true;
+
+			$imageData = [
+				'url'					=> $url,
+				'originalUrl'	=> $originalUrl
+			];
+
+			if( $resolvedLinkUrl !== null ) {
+				$imageData['linkUrl'] = $resolvedLinkUrl;
+			}
+
+			if( isset( $img['type'] ) && $img['type'] === 'video' ) {
+				$imageData['type'] = 'video';
+			}
+
+			if( isset( $img['meta'] ) ) {
+				$imageData['metadata'] = $img['meta'];
+			}
+
+			$galleryImages[] = $imageData;
 		}
 
 		$pagesFetched++;
 
-		$nextCursor = $galleryJson['nextCursor'] ?? null;
-		if( $nextCursor === null || $nextCursor === '' || $nextCursor === $cursor ) {
+		$nextPage = $galleryData['metadata']['nextPage'] ?? null;
+		if( !$nextPage ) {
 			$hasMoreGalleryPages = false;
 			break;
 		}
 
 		$hasMoreGalleryPages	= true;
-		$cursor								= $nextCursor;
+		$page++;
 	}
 	
 	// Supplement gallery with images known from our local DB that weren't returned
@@ -368,6 +338,56 @@ try {
 				}
 				$stmt->close();
 			}
+
+			// Pre-populate copy_all_text from gallery metadata so get_image_generation_data.php
+			// can serve the text immediately without hitting the unreliable imageId REST query.
+			// workflow_hash is intentionally NOT set here — images start as unscanned (gray)
+			// so that the auto-scan can determine the correct type (A1111 vs ComfyUI) by
+			// downloading the image. Setting P-1 here would mis-classify ComfyUI images.
+			$upsertSql = 'INSERT INTO images (image_id, model_id, model_version_id, copy_all_text) ' .
+						 'VALUES (?, ?, ?, ?) ' .
+						 'ON DUPLICATE KEY UPDATE ' .
+						 '  copy_all_text = IF(copy_all_text IS NULL OR copy_all_text = \'\', VALUES(copy_all_text), copy_all_text)';
+			$upsertStmt = $db->prepare( $upsertSql );
+			if( $upsertStmt ) {
+				$upsertImgId      = 0;
+				$upsertModelId    = (int)$modelId;
+				$upsertVersionId  = (int)$versionId;
+				$upsertCopyAll    = '';
+				$upsertStmt->bind_param( 'iiis', $upsertImgId, $upsertModelId, $upsertVersionId, $upsertCopyAll );
+
+				foreach( array_merge( $carouselImages, $galleryImages ) as $galleryImg ) {
+					$imgMeta = $galleryImg['metadata'] ?? null;
+					if( !is_array( $imgMeta ) || empty( $imgMeta ) ) continue;
+// Skip images with no generation params worth caching in copy_all_text
+					if( !isset( $imgMeta['steps'] ) && !isset( $imgMeta['sampler'] ) ) continue;
+
+					$imgLinkUrl = $galleryImg['linkUrl'] ?? '';
+					$upsertImgId = extractImagePageIdFromString( $imgLinkUrl );
+					if( !$upsertImgId ) continue;
+
+					$copyParts = [];
+					if( isset( $imgMeta['prompt'] ) && trim( (string)$imgMeta['prompt'] ) !== '' )
+						$copyParts[] = trim( (string)$imgMeta['prompt'] );
+					if( isset( $imgMeta['negativePrompt'] ) && trim( (string)$imgMeta['negativePrompt'] ) !== '' )
+						$copyParts[] = 'Negative prompt: ' . trim( (string)$imgMeta['negativePrompt'] );
+
+					$optPairs = [];
+					if( isset( $imgMeta['steps'] ) )   $optPairs[] = 'Steps: '     . (string)$imgMeta['steps'];
+					if( isset( $imgMeta['cfgScale'] ) ) $optPairs[] = 'CFG scale: ' . (string)$imgMeta['cfgScale'];
+					if( isset( $imgMeta['sampler'] ) )  $optPairs[] = 'Sampler: '   . (string)$imgMeta['sampler'];
+					if( isset( $imgMeta['seed'] ) )     $optPairs[] = 'Seed: '      . (string)$imgMeta['seed'];
+					if( isset( $imgMeta['Size'] ) )     $optPairs[] = 'Size: '      . (string)$imgMeta['Size'];
+					if( count( $optPairs ) > 0 )        $copyParts[] = implode( ', ', $optPairs );
+
+					$upsertCopyAll = implode( "\n", $copyParts );
+					if( trim( $upsertCopyAll ) === '' ) continue;
+
+					$upsertStmt->execute();
+				}
+				$upsertStmt->close();
+			}
+
 			$db->close();
 
 			// Build set of image page IDs already loaded from Civitai (carousel + gallery)

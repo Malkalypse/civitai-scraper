@@ -42,10 +42,10 @@ class WorkflowStateManager {
 			return null;
 		}
 
-		// Short purely-numeric values (e.g. "0") are invalid hashes written by an old
-		// code bug and should be treated the same as an absent entry so the scanner
-		// will re-process the image rather than treating it as already handled.
-		if( $text !== '' && ctype_digit( $text ) ) {
+		// Legacy/invalid hash values — treat as absent so the scanner re-processes the image.
+		// 'P-1' is the old bare parameters marker (no real hash); purely-numeric values
+		// (e.g. "0") were written by an earlier code bug.
+		if( $text === 'P-1' || ( $text !== '' && ctype_digit( $text ) ) ) {
 			return '';
 		}
 

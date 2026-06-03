@@ -1,216 +1,112 @@
-/** Sidebar management:
-	- Loading folder/file libraries
-	- Building lists
-	- Handling clicks
-*/
-
-// TODO: Create a generic libaries sidebar component that can be used for any type of library (checkpoints, loras, embeddings, etc.) and move all related functions there. This would make the code more modular and reusable, and reduce duplication between different library types.
-
-// initializeApp > setModelClickHandler( loadModelFromSidebar );
-// initializeApp > loadCheckpoints > loadSidebarLibrary
-// initializeApp > loadLoras > loadSidebarLibrary
-
-import { escapeHtml } from './dom-utils.js'; // safely escape folder and file names when building HTML
-import { AppState } from './app-context.js'; // current model/version info
-
-
-let modelClickHandler = null;
-
-
-/** Set click handler for files in sidebar
- * @param {function} handler Function to call when a file item is clicked
- * - Set to loadModelFromSidebar in script.js
+/** Civitai sidebar — loads checkpoints and loras into the sidebar, with tag filtering.
+ *
+ * Extends the generic Melodeon package with civitai-specific data adaptation and tag filtering.
  */
-export function setModelClickHandler( handler ) {
-	modelClickHandler = typeof handler === 'function'
-		? handler
-		: null;
-}
 
-/** Load checkpoints into sidebar
- * @param {boolean} [preserveState=false] Whether to preserve open/closed state of folders when reloading
- */ 
-export async function loadCheckpoints( preserveState = false ) {
-	await loadSidebarLibrary( {
-		url:          'api/models/get_models.php?type=checkpoint',
-		containerId:  'checkpointsList',
-		preserveState,
-		errorLabel:   'checkpoints'
-	} );
-}
-/** Load LoRAs into sidebar
- * @param {boolean} [preserveState=false] Whether to preserve open/closed state of folders when reloading
+import { Melodeon } from '../packages/melodeon/Melodeon.js';
+import { AppState } from './app-context.js';
+
+
+/** Recursively group files into an ordered entries array, preserving the position
+ * at which each sub-category first appears among the files.
+ * @param {Array}    files     Files with a `subfolder` string (e.g. "a/b/c") or null
+ * @param {Function} makeItem  Converts a file to a sidebar item object
+ * @returns {Array} Mixed array of item objects and sub-category objects
  */
-export async function loadLoras( preserveState = false ) {
-	await loadSidebarLibrary( {
-		url:          'api/models/get_models.php?type=lora',
-		containerId:  'lorasList',
-		preserveState,
-		errorLabel:   'loras'
-	} );
-}
+function groupByPath( files, makeItem ) {
+	const entries = [];
+	const subMap  = {};
 
-/** Load file libraries into the sidebar, preserving open folders
- * @param {string}  options.url                   API endpoint to fetch folder/file data from
- * @param {string}  options.containerId           ID of container element to render list into
- * @param {boolean} [options.preserveState=false] Whether to preserve open/closed state of folders when reloading
- * @param {string}  [options.errorLabel='items']  label to use in error messages (e.g. "checkpoints" or "loras")
- */
-export async function loadSidebarLibrary( {
-	url,
-	containerId,
-	preserveState = false,
-	errorLabel    = 'items'
-} ) {
-
-	const container = document.getElementById( containerId ); // get container element
-
-	if( !container ) return;
-
-	try {
-		// Get open folders to preserve state
-		const openFolders = preserveState 
-			? getOpenFolders( containerId )
-			: new Set(); 
-
-		// Fetch folder/file data from API
-		const response	= await fetch( url );
-		const result		= await response.json();
-
-		// Show any error returned by API
-		if( result.error ) {
-			container.innerHTML = `<div class="error" style="font-size: 12px;">${escapeHtml( result.error )}</div>`;
-			return;
+	for ( const file of files ) {
+		const path = file.subfolder || '';
+		if ( path === '' ) {
+			entries.push( makeItem( file ) );
+			continue;
 		}
-
-		// Build and render HTML for folders and files
-		if( result.data ) {
-			const html          = buildFoldersHTML( result.data, openFolders );
-			container.innerHTML = html;
-			attachSidebarEventHandlers( container );
+		const slashIdx = path.indexOf( '/' );
+		const first    = slashIdx === -1 ? path : path.slice( 0, slashIdx );
+		const rest     = slashIdx === -1 ? null  : path.slice( slashIdx + 1 ) || null;
+		if ( !subMap[first] ) {
+			subMap[first] = [];
+			entries.push( first ); // placeholder — replaced in the map pass below
 		}
-
-	// If no data and no error, show default message
-	} catch( error ) {
-		container.innerHTML = `<div class="error" style="font-size: 12px;">Error loading ${errorLabel}</div>`;
-	}
-}
-
-/** Track the open folders for a given container
- * @param {*} containerId ID of the container element to check for open folders
- * @returns Set of names of open folders
- */
-export function getOpenFolders( containerId ) {
-	const openFolders = new Set();
-	const container   = document.getElementById( containerId );
-
-	if( !container ) {
-		return openFolders;
+		subMap[first].push( { ...file, subfolder: rest } );
 	}
 
-	container.querySelectorAll( '.folder-item' ).forEach( ( folderItem ) => {
-		const fileList = folderItem.querySelector( '.file-list' );
-
-		if( fileList && fileList.style.display === 'block' ) {
-			const folderName = folderItem.querySelector( '.folder-name' );
-
-			if( folderName ) {
-				openFolders.add( folderName.textContent.trim().substring( 2 ) );
-			}
-		}
-	} );
-
-	return openFolders;
+	return entries.map( entry =>
+		typeof entry === 'string'
+			? { label: entry, entries: groupByPath( subMap[entry], makeItem ) }
+			: entry
+	);
 }
 
-/** Build the HTML for the sidebar folders and files
- * @param {*} foldersData Array of { folder: string, files: array of { name: string, modelId?: string, versionId?: string, exists?: boolean } }
- * @param {*} openFolders Set of folder names that should be rendered as open
- * @returns HTML string for the sidebar list
+/** Adapts civitai API response shape to an arbitrarily-deep nested Sidebar hierarchy.
+ *
+ * API shape:  [{ folder, files: [{ name, modelId?, versionId?, exists?, subfolder? }] }]
+ * Level 1:   Library label (e.g. "Checkpoints Library")
+ * Level 2:   Base-model folder (e.g. "Pony")
+ * Level 3+:  Disk subfolders (e.g. "Mature Citron", "Mature Citron/sub", …)
+ * Items:     Model files
  */
-export function buildFoldersHTML( foldersData, openFolders = new Set() ) {
-	let html = '';
+class CivitaiSidebar extends Melodeon {
 
-	foldersData.forEach( folder => {
-		const isOpen            = openFolders.has( folder.folder );
-		const displayStyle      = isOpen ? 'block' : 'none';
-		const triangleRotation  = isOpen ? ' style="transform: rotate(90deg);"' : '';
+	#libraryLabel
 
-		html += `
-		<div class="folder-item">
-		<div class="folder-name"><span class="folder-triangle"${triangleRotation}>▶</span> ${escapeHtml( folder.folder )}</div>
-		<ul class="file-list" style="display: ${displayStyle};">`;
+	constructor( options ) {
+		super( options );
+		this.#libraryLabel = options.libraryLabel ?? '';
+	}
 
-		folder.files.forEach( file => {
-			const modelAttr   = file.modelId ? ` data-model="${escapeHtml( file.modelId )}"` : '';
-			const versionAttr = file.versionId ? ` data-version="${escapeHtml( file.versionId )}"` : '';
-			const folderAttr  = ` data-folder="${escapeHtml( folder.folder )}"`;
-			const missingFile = file.exists === false ? ' missing-file' : '';
-			html += `<li class="file-item${missingFile}"${modelAttr}${versionAttr}${folderAttr}>${escapeHtml( file.name )}</li>`;
+	buildHTML( apiData, openCategories ) {
+		const level2Categories = apiData.map( folder => {
+			const makeItem = file => ( {
+				label:   file.name,
+				missing: file.exists === false,
+				data:    {
+					...( file.modelId   ? { model:   file.modelId   } : {} ),
+					...( file.versionId ? { version: file.versionId } : {} ),
+					folder: folder.folder
+				}
+			} );
+
+			const entries = groupByPath( folder.files, makeItem );
+			return { label: folder.folder, entries };
 		} );
 
-		html += `</ul></div>`;
-	} );
+		const topLevel = this.#libraryLabel
+			? [ { label: this.#libraryLabel, categories: level2Categories } ]
+			: level2Categories;
 
-	return html;
-}
-
-/** Attach click handlers for folder toggling and file selection
- * @param {*} container container element for folder/file list
- */
-export function attachSidebarEventHandlers( container ) {
-
-	// Prevent attaching multiple event listeners if already attached
-	if( !container || container.dataset.eventsBound === '1' ) {
-		return;
-	}
-
-	// Use event delegation to handle clicks on folders and files
-	container.addEventListener( 'click', ( event ) => {
-
-		// Toggle folder state when clicked
-		const folderName = event.target.closest( '.folder-name' );
-		if( folderName && container.contains( folderName ) ) {
-			toggleFolder( folderName );
-			return;
-		}
-
-		// Load specific model version when a version link is clicked
-		const fileItem = event.target.closest( '.file-item' );
-		if( fileItem && container.contains( fileItem ) ) {
-			if( modelClickHandler ) {
-				modelClickHandler( fileItem );
-			}
-		}
-
-	} );
-
-	// Mark event handlers as bound
-	container.dataset.eventsBound = '1';
-}
-/** Toggle visibility of a folder's file list in the sidebar
- * @param {HTMLElement} element clicked folder name element that contains the triangle and text
- */
-export function toggleFolder( element ) {
-	const fileList = element.nextElementSibling;
-	const triangle = element.querySelector( '.folder-triangle' );
-
-	if( fileList.style.display === 'none' ) {
-		fileList.style.display    = 'block';
-		triangle.style.transform  = 'rotate(90deg)';
-	} else {
-		fileList.style.display    = 'none';
-		triangle.style.transform  = 'rotate(0deg)';
+		return super.buildHTML( topLevel, openCategories );
 	}
 }
 
 
-/** Toggle the active state of a tag in the sidebar
- * @param {HTMLElement} element the clicked tag element
- */
+const checkpointsSidebar = new CivitaiSidebar( { containerId: 'checkpointsList', libraryLabel: 'Checkpoints Library' } );
+const lorasSidebar       = new CivitaiSidebar( { containerId: 'lorasList',       libraryLabel: 'Loras Library'       } );
+
+
+export function setModelClickHandler( handler ) {
+	checkpointsSidebar.setOnItemClick( handler );
+	lorasSidebar.setOnItemClick( handler );
+}
+
+export async function loadCheckpoints( preserveState = false ) {
+	await checkpointsSidebar.load( 'api/models/get_models.php?type=checkpoint', {
+		preserveState,
+		errorLabel: 'checkpoints'
+	} );
+}
+
+export async function loadLoras( preserveState = false ) {
+	await lorasSidebar.load( 'api/models/get_models.php?type=lora', {
+		preserveState,
+		errorLabel: 'loras'
+	} );
+}
+
 export function toggleTag( element ) {
 	const tag = element.getAttribute( 'data-tag' );
-
 	if( AppState.filters.activeTags.has( tag ) ) {
 		AppState.filters.activeTags.delete( tag );
 		element.classList.remove( 'active' );
@@ -218,50 +114,63 @@ export function toggleTag( element ) {
 		AppState.filters.activeTags.add( tag );
 		element.classList.add( 'active' );
 	}
-
-	console.log( 'Active tags:', Array.from( AppState.filters.activeTags ) );
 	updateSidebarHighlighting();
 }
-/** Update sidebar file highlighting based on currently active tags */
-export async function updateSidebarHighlighting() {
 
-	if( AppState.filters.activeTags.size === 0 ) {
-		document.querySelectorAll( '.file-item' ).forEach( item => {
-			item.classList.remove( 'hidden' );
+export function toggleUserTag( element ) {
+	const tag = element.getAttribute( 'data-tag' );
+	if( AppState.filters.activeUserTags.has( tag ) ) {
+		AppState.filters.activeUserTags.delete( tag );
+		element.classList.remove( 'active' );
+	} else {
+		AppState.filters.activeUserTags.add( tag );
+		element.classList.add( 'active' );
+	}
+	updateSidebarHighlighting();
+}
+
+export async function updateSidebarHighlighting() {
+	const hasModelTags = AppState.filters.activeTags.size > 0;
+	const hasUserTags  = AppState.filters.activeUserTags.size > 0;
+
+	if( !hasModelTags && !hasUserTags ) {
+		document.querySelectorAll( '.sidebar-item' ).forEach( item => {
+			item.classList.remove( 'sidebar-item--hidden' );
 		} );
 		return;
 	}
 
 	try {
-		const response = await fetch( 'api/tags/get_model_tags.php', {
-			method:   'POST',
-			headers:  { 'Content-Type': 'application/json' },
-			body:     JSON.stringify( { tags: Array.from( AppState.filters.activeTags ) } )
+		const toKey = m => `${m.model_id}:${m.version_id}`;
+
+		const [modelTagResult, userTagResult] = await Promise.all( [
+			hasModelTags
+				? fetch( 'api/tags/get_model_tags.php', {
+					method:  'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body:    JSON.stringify( { tags: Array.from( AppState.filters.activeTags ) } )
+				} ).then( r => r.json() )
+				: Promise.resolve( null ),
+			hasUserTags
+				? fetch( 'api/tags/user_tags.php', {
+					method:  'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body:    JSON.stringify( { action: 'filter', tags: Array.from( AppState.filters.activeUserTags ) } )
+				} ).then( r => r.json() )
+				: Promise.resolve( null )
+		] );
+
+		const modelTagKeys = modelTagResult?.matchingModels ? new Set( modelTagResult.matchingModels.map( toKey ) ) : null;
+		const userTagKeys  = userTagResult?.matchingModels  ? new Set( userTagResult.matchingModels.map( toKey ) )  : null;
+
+		document.querySelectorAll( '.sidebar-item' ).forEach( item => {
+			const key = `${item.getAttribute( 'data-model' )}:${item.getAttribute( 'data-version' )}`;
+			const matchesModelTags = !modelTagKeys || modelTagKeys.has( key );
+			const matchesUserTags  = !userTagKeys  || userTagKeys.has( key );
+			item.classList.toggle( 'sidebar-item--hidden', !( matchesModelTags && matchesUserTags ) );
 		} );
-
-		const result = await response.json();
-
-		if( result.success && result.matchingModels ) {
-			const fileItems = document.querySelectorAll( '.file-item' );
-
-			fileItems.forEach( item => {
-				const modelId    = item.getAttribute( 'data-model' );
-				const versionId  = item.getAttribute( 'data-version' );
-
-				const matches = result.matchingModels.some( m =>
-					m.model_id == modelId && m.version_id == versionId
-				);
-
-				if( matches ) {
-					item.classList.remove( 'hidden' );
-				} else {
-					item.classList.add( 'hidden' );
-				}
-			} );
-
-			console.log( `Showing ${result.matchingModels.length} matching models (${fileItems.length - result.matchingModels.length} hidden)` );
-		}
 	} catch( error ) {
 		console.error( 'Error updating sidebar highlighting:', error );
 	}
 }
+

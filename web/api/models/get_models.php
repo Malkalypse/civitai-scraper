@@ -8,33 +8,36 @@ require_once __DIR__ . '/../api_utils.php';
 
 ApiResponse::setJsonHeader();
 
-/** Collect existing file and folder names in a directory
+/** Collect existing file and folder names in a directory.
+ * Returns an associative array mapping lowercase names to their relative directory
+ * path within $basePath (empty string = directly inside $basePath).
  * @param string $basePath The base directory to scan
- * @return array Associative array of lowercase names for quick lookup
+ * @return array Associative array: lowercase name => relative directory path
  */
 function collectExistingFileNames( $basePath ) {
 	$names = [];
 
-	// Check if base path exists and is a directory
 	if( !is_dir( $basePath ) ) {
 		return $names;
 	}
 
-	// Use RecursiveDirectoryIterator to traverse the directory and collect file and folder names
+	$normalizedBase = rtrim( str_replace( '\\', '/', $basePath ), '/' );
+
 	$iterator = new RecursiveIteratorIterator(
 		new RecursiveDirectoryIterator( $basePath, RecursiveDirectoryIterator::SKIP_DOTS ),
 		RecursiveIteratorIterator::SELF_FIRST
 	);
 
-	// Collect names in lowercase for case-insensitive comparison
 	foreach( $iterator as $entry ) {
 		if( $entry->isDir() ) {
-			$dirName						= $entry->getFilename();
-			$dirNameLower				= strtolower( $dirName );
-			$dirNameNoExtLower	= strtolower( pathinfo( $dirName, PATHINFO_FILENAME ) );
+			$dirName         = $entry->getFilename();
+			$dirNameLower    = strtolower( $dirName );
+			$dirNameNoExtLow = strtolower( pathinfo( $dirName, PATHINFO_FILENAME ) );
+			$entryPath       = str_replace( '\\', '/', $entry->getPathname() );
+			$relativeDir     = ltrim( str_replace( $normalizedBase, '', $entryPath ), '/' );
 
-			$names[$dirNameLower]				= true;
-			$names[$dirNameNoExtLower]	= true;
+			$names[$dirNameLower]    = $relativeDir;
+			$names[$dirNameNoExtLow] = $relativeDir;
 			continue;
 		}
 
@@ -42,12 +45,14 @@ function collectExistingFileNames( $basePath ) {
 			continue;
 		}
 
-		$fileName						= $entry->getFilename();
-		$fileNameLower			= strtolower( $fileName );
+		$fileName           = $entry->getFilename();
+		$fileNameLower      = strtolower( $fileName );
 		$fileNameNoExtLower = strtolower( pathinfo( $fileName, PATHINFO_FILENAME ) );
+		$fileDir            = str_replace( '\\', '/', $entry->getPath() );
+		$relativeDir        = ltrim( str_replace( $normalizedBase, '', $fileDir ), '/' );
 
-		$names[$fileNameLower]			= true;
-		$names[$fileNameNoExtLower]	= true;
+		$names[$fileNameLower]      = $relativeDir;
+		$names[$fileNameNoExtLower] = $relativeDir;
 	}
 
 	return $names;
@@ -195,9 +200,17 @@ try {
 				$candidateKeys[] = strtolower( pathinfo( $originalFileName, PATHINFO_FILENAME ) );
 			}
 
-			$exists = false;
-			foreach( $candidateKeys as $key ) {
-				if( $key !== '' && isset( $existingFileNames[$key] ) ) {
+		$exists   = false;
+		$subfolder = null;
+				foreach( $candidateKeys as $key ) {
+					if( $key !== '' && isset( $existingFileNames[$key] ) ) {
+						// Extract first-level subfolder within the base_model folder
+						$relativeDir = $existingFileNames[$key];
+						$firstSlash  = strpos( $relativeDir, '/' );
+						if( $firstSlash !== false ) {
+							$afterFirst = substr( $relativeDir, $firstSlash + 1 );
+						$subfolder  = $afterFirst !== '' ? $afterFirst : null;
+						}
 					$exists = true;
 					break;
 				}
@@ -209,10 +222,11 @@ try {
 		}
 
 		$folderMap[$folderName][] = [
-			'name'			=> $fileName,
-			'modelId'		=> $row['model_id'],
-			'versionId'	=> $row['version_id'],
-			'exists'		=> $exists
+			'name'      => $fileName,
+			'modelId'   => $row['model_id'],
+			'versionId' => $row['version_id'],
+			'exists'    => $exists,
+			'subfolder' => $subfolder
 		];
 	}
 

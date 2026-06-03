@@ -228,48 +228,103 @@ export function renderWorkflowFilterButtons() {
 
 /** Show or hide image cards based on active filter criteria */
 export function applyImageCardFilters() {
+	const countsByKey = new Map(); // visible image IDs per workflow hash (ignoring hash filter)
+
 	document.querySelectorAll( '.image-card' ).forEach( card => {
 		const imageContainer = card.closest( '.image-container' );
-		const favoriteLoaded = card.dataset.favoriteLoaded === '1';
-		const workflowLoaded = card.dataset.workflowLoaded === '1';
-		const favorite = card.dataset.favorite === '1';
-		const workflowNull = card.dataset.workflowNull === '1';
-		const cardWorkflowKey = buildWorkflowFilterKey( card.dataset.workflowHash || '' );
+		const dismissed         = card.dataset.dismissed         === '1';
+		const favoriteLoaded    = card.dataset.favoriteLoaded    === '1';
+		const workflowLoaded    = card.dataset.workflowLoaded    === '1';
+		const favorite          = card.dataset.favorite          === '1';
+		const workflowNull      = card.dataset.workflowNull      === '1';
+		const workflowPresent   = card.dataset.workflowPresent   === '1';
+		const parametersPresent = card.dataset.parametersPresent === '1';
+		const cardWorkflowKey   = buildWorkflowFilterKey( card.dataset.workflowHash || '' );
 
-		const hideForWorkflow = AppState.ui.hideNonWorkflowImages && workflowLoaded && workflowNull;
-		const hideForFavorite = AppState.ui.hideNonFavoriteImages && favoriteLoaded && !favorite;
+		const { showWorkflow, showParameters, showNoData } = AppState.ui.workflowTypeFilter;
+		const hideForWorkflow = workflowLoaded && (
+			( parametersPresent                             && !showParameters ) ||
+			( !parametersPresent && workflowPresent         && !showWorkflow   ) ||
+			( !parametersPresent && !workflowPresent && workflowNull && !showNoData )
+		);
+		const hideForFavorite = AppState.ui.favoriteFilter === 'favorites' && favoriteLoaded && !favorite;
+		const hideDismissed = AppState.ui.favoriteFilter !== 'show-hidden' && dismissed;
 		const hideForSelectedWorkflow = AppState.workflow.activeWorkflowFilterKey !== 'all' && cardWorkflowKey !== AppState.workflow.activeWorkflowFilterKey;
-		const shouldHide = hideForWorkflow || hideForFavorite || hideForSelectedWorkflow;
+		const shouldHide = hideDismissed || hideForWorkflow || hideForFavorite || hideForSelectedWorkflow;
 
 		if( imageContainer ) {
 			imageContainer.style.display = shouldHide ? 'none' : '';
 		}
 
 		card.style.display = '';
+
+		// Accumulate count for this hash bucket (type + favorite filters only, not hash filter)
+		if( !hideDismissed && !hideForWorkflow && !hideForFavorite ) {
+			const imageId = card.querySelector( '[data-image-id]' )?.dataset.imageId;
+			if( imageId ) {
+				if( !countsByKey.has( cardWorkflowKey ) ) countsByKey.set( cardWorkflowKey, new Set() );
+				countsByKey.get( cardWorkflowKey ).add( imageId );
+			}
+		}
 	} );
 
+	updateWorkflowFilterButtonCounts( countsByKey );
+	updateImageSectionCounts();
 	updateGenerationPreviewToggleButtons();
+}
+
+/** Update carousel/gallery status labels to show visible/total counts after filters are applied */
+function updateImageSectionCounts() {
+	for( const [containerId, statusId] of [['carouselContainer', 'carouselStatus'], ['galleryContainer', 'galleryStatus']] ) {
+		const container = document.getElementById( containerId );
+		const statusEl  = document.getElementById( statusId );
+		if( !container || !statusEl || container.dataset.loading !== 'false' ) continue;
+		const totalLabel = container.dataset.total;
+		if( !totalLabel ) continue;
+		let visible = 0;
+		container.querySelectorAll( '.image-container' ).forEach( el => {
+			if( el.style.display !== 'none' ) visible++;
+		} );
+		statusEl.textContent = `(${visible}/${totalLabel})`;
+	}
+}
+
+/** Update workflow filter button labels and visibility to reflect currently visible image counts
+ * @param {Map<string, Set<string>>} countsByKey map of workflow hash key to set of visible image IDs
+ */
+function updateWorkflowFilterButtonCounts( countsByKey ) {
+	const container = document.getElementById( 'workflowFilterButtons' );
+	if( !container ) return;
+
+	container.querySelectorAll( 'button[data-filter-key]' ).forEach( btn => {
+		const key = btn.dataset.filterKey;
+		if( key === 'all' ) return;
+
+		const option = AppState.workflow.workflowFilterOptions.find( o => o.key === key );
+		if( !option ) return;
+
+		const visibleCount = countsByKey.has( key ) ? countsByKey.get( key ).size : 0;
+		const shortHash = option.workflowHash.length > 12 ? `${option.workflowHash.slice( 0, 12 )}...` : option.workflowHash;
+		btn.textContent = visibleCount > 0 ? `${shortHash} (${visibleCount})` : shortHash;
+		btn.style.display = visibleCount > 0 ? '' : 'none';
+	} );
 }
 
 
 
 
-/** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
- * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
- * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
- */
-export function toggleGenerationPreview( type ) {
-	if( type === 'non-workflow' ) {
-		AppState.ui.hideNonWorkflowImages = !AppState.ui.hideNonWorkflowImages;
-		localStorage.setItem( 'hideNonWorkflowImages', AppState.ui.hideNonWorkflowImages ? 'true' : 'false' );
-		applyImageCardFilters();
-		return;
-	} else if( type === 'non-favorites' ) {
-		AppState.ui.hideNonFavoriteImages = !AppState.ui.hideNonFavoriteImages;
-		localStorage.setItem( 'hideNonFavoriteImages', AppState.ui.hideNonFavoriteImages ? 'true' : 'false' );
-		applyImageCardFilters();
-		return;
-	}
+export function setWorkflowTypeFilter( key, checked ) {
+	if( !( key in AppState.ui.workflowTypeFilter ) ) return;
+	AppState.ui.workflowTypeFilter[ key ] = checked;
+	localStorage.setItem( key, checked ? 'true' : 'false' );
+	applyImageCardFilters();
+}
+
+export function setFavoriteFilter( value ) {
+	const valid = ['normal', 'favorites', 'show-hidden'];
+	AppState.ui.favoriteFilter = valid.includes( value ) ? value : 'normal';
+	localStorage.setItem( 'favoriteFilter', AppState.ui.favoriteFilter );
+	applyImageCardFilters();
 }
 /** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
  * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
@@ -281,19 +336,18 @@ export function buildWorkflowFilterKey( workflowHash ) {
 }
 
 
-/** Get the nodes from workflow analysis data, ensuring it is in the expected format and returning an empty array if not
- * @param {Object} workflowAnalysisData structured workflow analysis data with nodes and links
- * @returns {Array} array of nodes from the workflow analysis data, or empty array if data is not in expected format
- */
 export function updateGenerationPreviewToggleButtons() {
-	const nonWorkflowBtn = document.getElementById( 'generationToggleNonWorkflowBtn' );
-	const nonFavoritesBtn = document.getElementById( 'generationToggleNonFavoritesBtn' );
+	const { showWorkflow, showParameters, showNoData } = AppState.ui.workflowTypeFilter;
 
-	if( nonWorkflowBtn ) {
-		nonWorkflowBtn.textContent = AppState.ui.hideNonWorkflowImages ? 'Show Non-Workflow' : 'Hide Non-Workflow';
-	}
+	const workflowCheckbox    = document.getElementById( 'showWorkflowFilter' );
+	const parametersCheckbox  = document.getElementById( 'showParametersFilter' );
+	const noDataCheckbox      = document.getElementById( 'showNoDataFilter' );
+	if( workflowCheckbox   && workflowCheckbox.checked   !== showWorkflow   ) workflowCheckbox.checked   = showWorkflow;
+	if( parametersCheckbox && parametersCheckbox.checked !== showParameters ) parametersCheckbox.checked = showParameters;
+	if( noDataCheckbox     && noDataCheckbox.checked     !== showNoData     ) noDataCheckbox.checked     = showNoData;
 
-	if( nonFavoritesBtn ) {
-		nonFavoritesBtn.textContent = AppState.ui.hideNonFavoriteImages ? 'Show Non-Favorites' : 'Hide Non-Favorites';
+	const favoriteFilterSelect = document.getElementById( 'generationFavoriteFilter' );
+	if( favoriteFilterSelect && favoriteFilterSelect.value !== AppState.ui.favoriteFilter ) {
+		favoriteFilterSelect.value = AppState.ui.favoriteFilter;
 	}
 }

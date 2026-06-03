@@ -164,7 +164,7 @@ class JpegMetadataReader {
 
 					$decodedUserComment = self::decodeExifUserComment( $rawUserComment );
 					if( $decodedUserComment !== '' ) {
-						$entries[] = ['chunk' => 'JPEG_EXIF', 'keyword' => 'workflow', 'text' => $decodedUserComment];
+						$entries[] = ['chunk' => 'JPEG_EXIF', 'keyword' => 'UserComment', 'text' => $decodedUserComment];
 					}
 				}
 			}

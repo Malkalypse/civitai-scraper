@@ -112,10 +112,12 @@ try {
 	ApiResponse::sendFailure( 'Exception: ' . $e->getMessage(), 500 );
 }
 
-// Store JSDC-compressed workflow when a real hash and workflow text are available.
+// Store JSDC-compressed workflow only for real ComfyUI workflows (not inferred A1111 ones).
+// Inferred workflows use P-* hashes — storing them in JSDC would cause mis-classification
+// on subsequent scans (the cached inferred JSON would be returned as a real workflow).
 // Runs after the response is sent (output buffering permitting) so JSDC errors are
 // non-fatal from the caller's perspective.
-if( $workflowHash !== '-1' && $workflowText !== '' ) {
+if( $workflowHash !== '-1' && !str_starts_with( $workflowHash, 'P-' ) && $workflowText !== '' ) {
 	try {
 		$workflowDecoded = json_decode( $workflowText, true );
 		if( is_array( $workflowDecoded ) ) {
